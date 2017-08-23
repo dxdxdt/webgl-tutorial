@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <script type="application/javascript" src="gl-matrix.js"></script>
+
+  <script type="application/x-glsl-shader" id="v_shader">
+  uniform mat4 u_mvp;
+
+  attribute vec3 a_pos;
+  attribute vec2 a_uv;
+
+  varying vec2 v_uv;
+
+  void main () {
+    gl_Position = u_mvp * vec4(a_pos, 1.0);
+    v_uv = a_uv;
+  }
+  </script>
+  <script type="application/x-glsl-shader" id="frag_shader">
+  precision mediump float;
+
+  uniform sampler2D u_sample;
+
+  varying vec2 v_uv;
+
+  void main () {
+    gl_FragColor = texture2D(u_sample, v_uv);
+  }
+  </script>
+
+  <script type="application/javascript">
+  "use strict";
+  class GLError extends Error {
+    constructor (ctx, msg, fn, ln) {
+      var glCode = new Set();
+      super(msg, fn, ln);
+
+      (function (){
+        var c;
+        while ((c = ctx.getError())) {
+          glCode.add(c);
+        }
+      })();
+
+      Object.defineProperty(this, 'glCode', {
+        get : function () {
+          return glCode;
+        }});
+      Object.defineProperty(this, 'ctx', {
+        get : function () {
+          return ctx;
+        }});
+    }
+
+    throwFreezed() {
+      throw Object.freeze(this);
+    }
+  }
+
+  class PerfStopwatch {
+    constructor () {
+      var tsArr = [];
+      var prec = 4;
+
+      Object.defineProperty(this, 'ts', {
+        get : function () {
+          return tsArr.slice();
+        }
+      });
+      Object.defineProperty(this, 'push', {
+        value : function (report) {
+          var ts = performance.now();
+
+          if (report) {
+            if (tsArr.length) {
+              console.log(tsArr.length + ": " + (ts - tsArr[0]).toFixed(prec) + "ms (diff: " + (ts - tsArr[tsArr.length - 1]).toFixed(prec) + "ms)");
+            }
+            else {
+              console.log("0: " + (0).toFixed(prec) + "ms");
+            }
+          }
+          tsArr.push(ts);
+
+          return this;
+        }
+      });
+      Object.defineProperty(this, 'reset', {
+        value : function () {
+          tsArr = [];
+          return this;
+        }
+      });
+    }
+  }
+
+  WebGLRenderingContext.prototype.__clearError = function () {
+    while (this.getError());
+  };
+
+  function printLegit (str) {
+    if (typeof str == 'string' && str) {
+      console.log(str);
+    }
+  }
+
+  function printShaderPrecision (gl, s, t) {
+    var x = gl.getShaderPrecisionFormat(gl[s], gl[t]);
+
+    if (x) {
+      console.log(s + "/" + t + ": " + x.precision + "(" + x.rangeMin + "~" + x.rangeMax + ")");
+    }
+  }
+
+  mat4.amul = function () {
+    var ret, tmp;
+    var i;
+
+    if (arguments.length <= 1) {
+      throw new TypeError("at least 2 arguments required, but only " + arguments.length + " present.");
+    }
+
+    ret = mat4.clone(arguments[0]);
+    tmp = mat4.create();
+    for (i = 1; i < arguments.length; i += 1) {
+      mat4.mul(tmp, ret, arguments[i]);
+      mat4.copy(ret, tmp);
+    }
+
+    return ret;
+  };
+  mat4.ramul = () => mat4.amul.apply(this, Array.from(arguments).reverse());
+
+  function boot () {
+    var fired = false;
+    var rp = { // Resource pack
+      tp: [], // Texture pack
+      tp_cnt: 0
+    };
+    var img;
+    var fireIfReady = function () {
+      if (fired) {
+        return;
+      }
+      if (rp.tp.length > rp.tp_cnt) {
+        return;
+      }
+
+      fireGL(rp);
+      fired = true;
+    };
+    var onImageLoad = function () {
+      for (let v of rp.tp) {
+        rp.tp_cnt += 1;
+        fireIfReady();
+      }
+    };
+
+    // Load necessary resources.
+    img = new Image();
+    img.onload = onImageLoad;
+    rp.tp.push(img);
+    img.src = "assets/t5/cube.png";
+  }
+
+  function fireGL (rp) {
+    var watch = new PerfStopwatch();
+    var surface = document.getElementById("surface");
+    var gl = surface.getContext("webgl");
+    var vShader, fShader, progObj;
+    var progInfoLog;
+    var loadShader = function (src, type) {
+      var shader, shaderInfo;
+
+      gl.__clearError();
+      shader = gl.createShader(type);
+      if (!shader) {
+        let e = new GLError(gl, "Could not create shader.");
+        e.throwFreezed();
+      }
+
+      gl.shaderSource(shader, src);
+      gl.compileShader(shader);
+      shaderInfo = gl.getShaderInfoLog(shader);
+
+      printLegit(shaderInfo);
+
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        let e = new GLError(gl, "Failed to compile shader.");
+        e.infoLog = shaderInfo;
+
+        gl.deleteShader(shader);
+
+        e.throwFreezed();
+      }
+
+      return shader;
+    };
+    var glParam = function (name) {
+      var prop;
+
+      if (name.substr(0, 3) !== 'GL_') {
+        return;
+      }
+      prop = gl[name.substr(3)];
+      return prop && gl.getParameter(prop);
+    };
+    var printGLParam = function (name) {
+      console.log(name + ": " + glParam(name));
+    };
+
+    // Environmental data printout
+    if (false) {
+      printGLParam("GL_MAX_TEXTURE_IMAGE_UNITS");
+      printGLParam("GL_MAX_VERTEX_UNIFORM_VECTORS");
+      printGLParam("GL_MAX_FRAGMENT_UNIFORM_VECTORS");
+      printGLParam("GL_MAX_VERTEX_ATTRIBS");
+      printGLParam("GL_MAX_VARYING_VECTORS");
+      printGLParam("GL_ALIASED_POINT_SIZE_RANGE");
+      printGLParam("GL_SAMPLES");
+
+      printShaderPrecision(gl, "VERTEX_SHADER", "LOW_FLOAT");
+      printShaderPrecision(gl, "VERTEX_SHADER", "MEDIUM_FLOAT");
+      printShaderPrecision(gl, "VERTEX_SHADER", "HIGH_FLOAT");
+      printShaderPrecision(gl, "VERTEX_SHADER", "LOW_INT");
+      printShaderPrecision(gl, "VERTEX_SHADER", "MEDIUM_INT");
+      printShaderPrecision(gl, "VERTEX_SHADER", "HIGH_INT");
+      printShaderPrecision(gl, "FRAGMENT_SHADER", "LOW_FLOAT");
+      printShaderPrecision(gl, "FRAGMENT_SHADER", "MEDIUM_FLOAT");
+      printShaderPrecision(gl, "FRAGMENT_SHADER", "HIGH_FLOAT");
+      printShaderPrecision(gl, "FRAGMENT_SHADER", "LOW_INT");
+      printShaderPrecision(gl, "FRAGMENT_SHADER", "MEDIUM_INT");
+      printShaderPrecision(gl, "FRAGMENT_SHADER", "HIGH_INT");
+
+      console.log(gl.getSupportedExtensions().join("\n"));
+    }
+
+    watch.push(false);
+    vShader = loadShader(document.getElementById("v_shader").text, gl.VERTEX_SHADER);
+    fShader = loadShader(document.getElementById("frag_shader").text, gl.FRAGMENT_SHADER);
+    watch.push(true);
+
+    progObj = gl.createProgram();
+    gl.attachShader(progObj, vShader);
+    gl.attachShader(progObj, fShader);
+
+    gl.linkProgram(progObj);
+    watch.push(true);
+    progInfoLog = gl.getProgramInfoLog(progObj);
+
+    printLegit(progInfoLog);
+
+    if (!gl.getProgramParameter(progObj, gl.LINK_STATUS)) {
+      let e = new GLError(gl, "Failed to link program");
+      e.infoLog = progInfoLog;
+
+      gl.deleteProgram(progObj);
+
+      e.throwFreezed();
+    }
+
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+    (function () {
+      var frameCounter = document.getElementById("frameCounter");
+      var framePerf = [];
+      var frameWatch = new PerfStopwatch();
+      var vertices = new Float32Array([
+        -1.0,-1.0,-1.0, // triangle 1 : begin
+        -1.0,-1.0, 1.0,
+        -1.0, 1.0, 1.0, // triangle 1 : end
+        1.0, 1.0,-1.0, // triangle 2 : begin
+        -1.0,-1.0,-1.0,
+        -1.0, 1.0,-1.0, // triangle 2 : end
+        1.0,-1.0, 1.0,
+        -1.0,-1.0,-1.0,
+        1.0,-1.0,-1.0,
+        1.0, 1.0,-1.0,
+        1.0,-1.0,-1.0,
+        -1.0,-1.0,-1.0,
+        -1.0,-1.0,-1.0,
+        -1.0, 1.0, 1.0,
+        -1.0, 1.0,-1.0,
+        1.0,-1.0, 1.0,
+        -1.0,-1.0, 1.0,
+        -1.0,-1.0,-1.0,
+        -1.0, 1.0, 1.0,
+        -1.0,-1.0, 1.0,
+        1.0,-1.0, 1.0,
+        1.0, 1.0, 1.0,
+        1.0,-1.0,-1.0,
+        1.0, 1.0,-1.0,
+        1.0,-1.0,-1.0,
+        1.0, 1.0, 1.0,
+        1.0,-1.0, 1.0,
+        1.0, 1.0, 1.0,
+        1.0, 1.0,-1.0,
+        -1.0, 1.0,-1.0,
+        1.0, 1.0, 1.0,
+        -1.0, 1.0,-1.0,
+        -1.0, 1.0, 1.0,
+        1.0, 1.0, 1.0,
+        -1.0, 1.0, 1.0,
+        1.0,-1.0, 1.0
+      ]);
+      var uvs = new Float32Array([
+        0.000059, 0.000004,
+        0.000103, 0.336048,
+        0.335973, 0.335903,
+        1.000023, 0.000013,
+        0.667979, 0.335851,
+        0.999958, 0.336064,
+        0.667979, 0.335851,
+        0.336024, 0.671877,
+        0.667969, 0.671889,
+        1.000023, 0.000013,
+        0.668104, 0.000013,
+        0.667979, 0.335851,
+        0.000059, 0.000004,
+        0.335973, 0.335903,
+        0.336098, 0.000071,
+        0.667979, 0.335851,
+        0.335973, 0.335903,
+        0.336024, 0.671877,
+        1.000004, 0.671847,
+        0.999958, 0.336064,
+        0.667979, 0.335851,
+        0.668104, 0.000013,
+        0.335973, 0.335903,
+        0.667979, 0.335851,
+        0.335973, 0.335903,
+        0.668104, 0.000013,
+        0.336098, 0.000071,
+        0.000103, 0.336048,
+        0.000004, 0.671870,
+        0.336024, 0.671877,
+        0.000103, 0.336048,
+        0.336024, 0.671877,
+        0.335973, 0.335903,
+        0.667969, 0.671889,
+        1.000004, 0.671847,
+        0.667979, 0.335851
+      ]);
+      var vab, uvab, tex;
+      var matProj, matView, matModel, matMVP;
+      var loc_matMVP, loc_tex;
+
+      watch.push(false);
+
+      matProj = mat4.create();
+      matView = mat4.create();
+      matModel = mat4.create();
+
+      vab = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, vab);
+      gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.bindAttribLocation(progObj, 0, "a_pos");
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+      uvab = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, uvab);
+      gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(1);
+      gl.bindAttribLocation(progObj, 1, "a_uv");
+      gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+
+      tex = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rp.tp[0]);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+
+      loc_matMVP = gl.getUniformLocation(progObj, "u_mvp");
+      loc_tex = gl.getUniformLocation(progObj, "u_sample");
+
+      gl.useProgram(progObj);
+      gl.uniform1i(loc_tex, 0);
+
+      watch.push(true);
+
+      var draw = function () {
+        frameWatch.reset().push();
+
+        gl.viewport(0, 0, surface.width, surface.height);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.COLOR_DEPTH_BUFFER_BIT);
+
+        mat4.perspective(matProj, glMatrix.toRadian(45), surface.width / surface.height, 0.1, 100.0);
+        // mat4.ortho(matProj, -10, 10, -10, 10, 0, 100);
+        mat4.lookAt(matView, vec3.fromValues(6, 5, 3), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+
+        mat4.identity(matModel);
+        matMVP = mat4.amul(matProj, matView, matModel);
+
+        gl.useProgram(progObj);
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthFunc(gl.LESS);
+
+        gl.uniformMatrix4fv(loc_matMVP, false, matMVP);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 12*3);
+
+        gl.flush();
+
+        frameWatch.push();
+        framePerf.push(frameWatch.ts[1] - frameWatch.ts[0]);
+        requestAnimationFrame(draw);
+      };
+
+      requestAnimationFrame(draw);
+
+      setInterval(function () {
+        var sum, min, max, str, stdev, mean;
+
+        if (framePerf.length) {
+          min = max = framePerf[0];
+          stdev = sum = 0;
+
+          for (let v of framePerf) {
+            if (v > max) {
+              max = v;
+            }
+            if (v < min) {
+              min = v;
+            }
+            sum += v;
+          }
+          mean = sum / framePerf.length;
+
+          for (let v of framePerf) {
+            stdev += Math.abs(v - mean);
+          }
+          stdev = stdev / framePerf.length;
+
+          str = framePerf.length + " (sum: " + sum.toFixed(4) + ", mean: " + mean.toFixed(4) + ", min: " + min.toFixed(4) + ", max: " + max.toFixed(4) + ", stdev: " + stdev.toFixed(4) + ")";
+        }
+        else {
+          str = "0";
+        }
+
+        while (frameCounter.firstChild) {
+          frameCounter.removeChild(frameCounter.firstChild);
+        }
+        frameCounter.appendChild(document.createTextNode(str));
+        framePerf = [];
+      }, 1000);
+    })();
+  }
+  </script>
+</head>
+<body onload="boot()">
+  <p>
+    <canvas id="surface" width="800" height="600"></canvas>
+  </p>
+  <p>
+    <div id="frameCounter"></div>
+  </p>
+</body>
+</html>

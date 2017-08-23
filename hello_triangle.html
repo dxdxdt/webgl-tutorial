@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script type="application/x-glsl-shader" id="v_shader">
+  attribute vec4 vPosition;
+
+  void main () {
+    gl_Position = vPosition;
+  }
+  </script>
+  <script type="application/x-glsl-shader" id="frag_shader">
+  precision mediump float;
+
+  void main () {
+    gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+  }
+  </script>
+
+  <script type="application/javascript">
+  "use strict";
+  class GLError extends Error {
+    constructor (ctx, msg, fn, ln) {
+      var glCode = new Set();
+      super(msg, fn, ln);
+
+      (function (){
+        var c;
+        while ((c = ctx.getError())) {
+          glCode.add(c);
+        }
+      })();
+
+      Object.defineProperty(this, 'glCode', {
+        get : function () {
+          return glCode;
+        }});
+      Object.defineProperty(this, 'ctx', {
+        get : function () {
+          return ctx;
+        }});
+    }
+
+    throwFreezed() {
+      throw Object.freeze(this);
+    }
+  }
+
+  WebGLRenderingContext.prototype.__clearError = function () {
+    var c;
+
+    while ((c = this.getError()));
+  };
+
+  function printLegit (str) {
+    if (typeof str == 'string' && str) {
+      console.log(str);
+    }
+  }
+
+  function boot () {
+    var surface = document.getElementById("surface");
+    var gl = surface.getContext("webgl");
+    var vShader, fShader, progObj;
+    var progInfoLog;
+    var loadShader = function (src, type) {
+      var shader, shaderInfo;
+
+      gl.__clearError();
+      shader = gl.createShader(type);
+      if (!shader) {
+        let e = new GLError(gl, "Could not create shader.");
+        e.throwFreezed();
+      }
+
+      gl.shaderSource(shader, src);
+      gl.compileShader(shader);
+      shaderInfo = gl.getShaderInfoLog(shader);
+
+      printLegit(shaderInfo);
+
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        let e = new GLError(gl, "Failed to compile shader.");
+        e.infoLog = shaderInfo;
+
+        gl.deleteShader(shader);
+
+        e.throwFreezed();
+      }
+
+      return shader;
+    };
+
+    vShader = loadShader(document.getElementById("v_shader").text, gl.VERTEX_SHADER);
+    fShader = loadShader(document.getElementById("frag_shader").text, gl.FRAGMENT_SHADER);
+
+    progObj = gl.createProgram();
+    gl.attachShader(progObj, vShader);
+    gl.attachShader(progObj, fShader);
+
+    gl.bindAttribLocation(progObj, 0, "vPosition");
+
+    gl.linkProgram(progObj);
+    progInfoLog = gl.getProgramInfoLog(progObj);
+
+    printLegit(progInfoLog);
+
+    if (!gl.getProgramParameter(progObj, gl.LINK_STATUS)) {
+      let e = new GLError(gl, "Failed to link program");
+      e.infoLog = progInfoLog;
+
+      gl.deleteProgram(progObj);
+
+      e.throwFreezed();
+    }
+
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+    (function () {
+      var vertices = new Float32Array([
+        0.0, 0.5, 0.0,
+        -0.5, -0.5, 0.0,
+        0.5, -0.5, 0.0
+      ]);
+      var vbo = gl.createBuffer();
+      var frameCounter = document.getElementById("frameCounter");
+      var frameCount = 0;
+      var draw = function () {
+        gl.viewport(0, 0, surface.width, surface.height);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.useProgram(progObj);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+        gl.flush();
+
+        requestAnimationFrame(draw);
+        frameCount += 1;
+      };
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, 0, 0);
+      gl.enableVertexAttribArray(0);
+
+      requestAnimationFrame(draw);
+
+      setInterval(function () {
+        while (frameCounter.firstChild) {
+          frameCounter.removeChild(frameCounter.firstChild);
+        }
+        frameCounter.appendChild(document.createTextNode(frameCount));
+        frameCount = 0;
+      }, 1000);
+    })();
+  }
+  </script>
+</head>
+<body onload="boot()">
+  <p>
+    <canvas id="surface" width="500" height="400"></canvas>
+  </p>
+  <p>
+    <div id="frameCounter"></div>
+  </p>
+</body>
+</html>
