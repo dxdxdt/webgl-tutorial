@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <script type="application/javascript" src="gl-matrix.js"></script>
+  <script type="application/javascript" src="mod/gl-matrix.js"></script>
 
   <script type="application/x-glsl-shader" id="v_shader">
   uniform mat4 u_mvp;
@@ -349,7 +349,7 @@
         mat4.perspective(matProj, glMatrix.toRadian(45), surface.width / surface.height, 0.1, 100.0);
         // mat4.ortho(matProj, -10, 10, -10, 10, 0, 100);
         mat4.lookAt(matView, vec3.fromValues(6, 5, 3), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
-        
+
         mat4.identity(matModel);
         matMVP = mat4.amul(matProj, matView, matModel);
 
