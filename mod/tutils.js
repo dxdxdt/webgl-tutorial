@@ -5,9 +5,33 @@ var Tut = (() => {
   var __ret__; // Scope object.
   const __RAD2DEG__ = Math.PI / 180;
   var __fabAcc__, __fabRacc__;
+  var __checkType__, __checkIfFunc__, __checkClass__;
+
+  __checkType__ = function (x, t) {
+    var typeName = typeof x;
+
+    if (typeName !== t) {
+      let sb = [
+        t,
+        " type required. Passed: ",
+        typeName
+      ];
+      Tut.throwFreezed(new TypeError(sb.join("")));
+    }
+  };
+  __checkClass__ = function (x, c) {
+    if (!(x instanceof c)) {
+      Tut.throwFreezed(new TypeError("instance of " + (c.name || c) + "required."));
+    }
+  };
+  __checkIfFunc__ = function (x) {
+    if (!(x instanceof Function)) {
+      Tut.throwFreezed(new TypeError("function/callable required."));
+    }
+  };
 
   __ret__ = {
-    GLError: class GLError extends Error {
+    GLError: class extends Error {
       constructor (ctx, msg, fn, ln) {
         var glCode = new Set();
         super(msg, fn, ln);
@@ -22,19 +46,19 @@ var Tut = (() => {
         Object.defineProperty(this, 'glCode', {
           get : function () {
             return glCode;
-          }});
+          },
+          configurable: true
+        });
         Object.defineProperty(this, 'ctx', {
           get : function () {
             return ctx;
-          }});
-      }
-
-      throwFreezed() {
-        throw Object.freeze(this);
+          },
+          configurable: true
+        });
       }
     },
 
-    PerfStopwatch: class PerfStopwatch {
+    PerfStopwatch: class {
       constructor () {
         var tsArr = [];
         var prec = 4;
@@ -42,7 +66,8 @@ var Tut = (() => {
         Object.defineProperty(this, 'ts', {
           get : function () {
             return tsArr.slice();
-          }
+          },
+          configurable: true
         });
         Object.defineProperty(this, 'push', {
           value : function (report) {
@@ -59,13 +84,15 @@ var Tut = (() => {
             tsArr.push(ts);
 
             return this;
-          }
+          },
+          configurable: true
         });
         Object.defineProperty(this, 'reset', {
           value : function () {
             tsArr = [];
             return this;
-          }
+          },
+          configurable: true
         });
       }
     },
@@ -105,32 +132,38 @@ var Tut = (() => {
         Object.defineProperty(this, 'sum', {
           get : function () {
             return __sum;
-          }
+          },
+          configurable: true
         });
         Object.defineProperty(this, 'min', {
           get : function () {
             return __min;
-          }
+          },
+          configurable: true
         });
         Object.defineProperty(this, 'max', {
           get : function () {
             return __max;
-          }
+          },
+          configurable: true
         });
         Object.defineProperty(this, 'stdev', {
           get : function () {
             return __stdev;
-          }
+          },
+          configurable: true
         });
         Object.defineProperty(this, 'mean', {
           get : function () {
             return __mean;
-          }
+          },
+          configurable: true
         });
         Object.defineProperty(this, 'cnt', {
           get : function () {
             return __cnt;
-          }
+          },
+          configurable: true
         });
       }
     },
@@ -234,6 +267,579 @@ var Tut = (() => {
       }
     },
 
+    R: (function () {
+        var __TYPES__ = Object.freeze({
+          TEXT: 0,
+          ARRAYBUFFER: 1,
+          DOCUMENT: 2,
+          JSON: 3,
+          IMAGE: 4
+        });
+        var __ERROR_CODES__ = Object.freeze({
+          INTERNAL: 0,
+          DUP: 1,
+          NO_RSRC: 2,
+          IN_ACTION: 3
+        });
+        var __DEF_WORKERS__ = 4;
+        var __ERR_WAIT_TIME__ = 200;
+        var __GIVE_UP_AFTER__ = 5;
+        // Therefore, max stall time: '__ERR_WAIT_TIME__' * '__GIVE_UP_AFTER__'
+        var __ns__;
+        var __typeSet__ = new Set();
+        var __errorCodeSet__ = new Set();
+        var __type2responseType__;
+        var __checkTypeRange__;
+        var __throwMyError__;
+
+        let k;
+
+        for (k in __TYPES__) {
+          __typeSet__.add(__TYPES__[k]);
+        }
+        for (k in __ERROR_CODES__) {
+          __errorCodeSet__.add(__ERROR_CODES__[k]);
+        }
+        Object.freeze(__typeSet__);
+
+        __type2responseType__ = function (x) {
+          switch (x) {
+          case __TYPES__.TEXT: return 'text';
+          case __TYPES__.ARRAYBUFFER: return 'arraybuffer';
+          case __TYPES__.DOCUMENT: return 'document';
+          case __TYPES__.JSON: return 'json';
+          default: Tut.throwFreezed(new RangeError("type not in range."));
+          }
+        };
+        __checkTypeRange__ = function (x) {
+          if (!__typeSet__.has(x)) {
+            let sb = [
+              "type not in range(",
+              0,
+              ", ",
+              __typeSet__.size - 1,
+              "). Passed: ",
+              x
+            ];
+            Tut.throwFreezed(new RangeError(sb.join("")));
+          }
+        };
+        __throwMyError__ = function (msg, code) {
+          let e = new Tut.R.Error(msg);
+          e.code = code;
+          Tut.throwFreezed(e);
+        };
+
+        __ns__ = {
+          TYPE: __TYPES__,
+          Source: class {
+            constructor (__id, __uri, __type) {
+              Object.defineProperties(this, {
+                id: {
+                  get: function () {
+                    return __id;
+                  },
+                  set: function (x) {
+                    __checkType__(x, 'string');
+                    if (x === '') {
+                      Tut.throwFreezed(new TypeError("Empty string id not allowed."));
+                    }
+                    __id = x;
+                    return x;
+                  },
+                  configurable: true
+                },
+                uri: {
+                  get: function () {
+                    return __uri;
+                  },
+                  set: function (x) {
+                    __checkType__(x, 'string');
+                    __uri = x;
+                    return x;
+                  },
+                  configurable: true
+                },
+                type: {
+                  get: function () {
+                    return __type;
+                  },
+                  set: function (x) {
+                    __checkType__(x, 'number');
+                    __checkTypeRange__(x); // TODO: test
+                    __type = x;
+                    return x;
+                  },
+                  configurable: true
+                }
+              });
+
+              this.id = __id;
+              this.uri = __uri;
+              this.type = __type;
+            }
+          },
+
+          Pack: class {
+            constructor (iterable) {
+              var __rsrcMap = new Map(); // ID string => Source
+              var __pending = [];
+              // Source => fetched resource
+              // (Tut.R.Error / String / ArrayBuffer / Document / JSON / Image)
+              var __fetchedMap = new Map();
+              var __resultMap = new Map(); // Source => boolean
+              var __workerMap = new Map(); // Request instance => Source
+              // Number of requests to process simultaneously
+              var __workers = __DEF_WORKERS__;
+              // Protected methods
+              var __deploy, __utilise, __giveup, __throwIfInAction,
+                __treatError, __treatOK;
+              var __handleError, __handleLoad; // Event handlers
+              var __onResult = null, __onDone = null;
+              var __cntError = 0, __cntOK = 0;
+              var __reqErrCnt = 0;
+
+              // Make an XMLHttpRequest instance to fetch the resource.
+              __deploy = function (src) {
+                let req;
+
+                if (__workerMap.size >= __workers) {
+                  // XXX: cargocult. Caller must check before calling
+                  // the function.
+                  __throwMyError__("no worker available.",
+                    __ERROR_CODES__.INTERNAL);
+                }
+
+                switch (src.type) {
+                case __TYPES__.TYPE.TEXT:
+                case __TYPES__.TYPE.ARRAYBUFFER:
+                case __TYPES__.TYPE.DOCUMENT:
+                case __TYPES__.TYPE.JSON:
+                  req = new XMLHttpRequest();
+                  req.open("GET", src.uri);
+                  req.responseType = __type2responseType__(src.type);
+                  req.addEventListener('abort', __handleError);
+                  req.addEventListener('error', __handleError);
+                  req.addEventListener('load', __handleLoad);
+                  req.send();
+                  break;
+                case __TYPES__.TYPE.IMAGE:
+                  req = new Image();
+                  req.addEventListener('error', __handleError);
+                  req.addEventListener('load', __handleLoad);
+                  req.src = src.uri;
+                  // TODO: crossorigin support?
+                  break;
+                }
+                __workerMap.set(req, src);
+              };
+              // Call '__deploy' until it's full.
+              __utilise = function () {
+                try {
+                  while (__workerMap.size < __workers && __pending.length > 0) {
+                    __deploy(__pending[0]);
+                    __pending.pop();
+                    __reqErrCnt = 0;
+                  }
+                }
+                catch (e) {
+                  if (e instanceof Tut.R.Error) {
+                    // XXX: cargocult
+                    // Something horrible happened inside. Panic.
+                    __giveup();
+                  }
+                  else {
+                    // TODO: test
+                    // Probably system resource shortage.
+                    if (__workerMap.length <= 0 && __pending.length > 0) {
+                      // Got resource to fetch, but no worker to wait around.
+                      if (__reqErrCnt >= __GIVE_UP_AFTER__) {
+                        // Tried enough. The system's in a bad shape.
+                        __giveup();
+                      }
+                      else {
+                        __reqErrCnt += 1;
+                        // Give it a shot after a while.
+                        setTimeout(function () {
+                          __utilise();
+                        }, __ERR_WAIT_TIME__);
+                      }
+                    }
+                  }
+                }
+              };
+              // Give up on pending resources.
+              __giveup = function () {
+                while (__pending.length > 0) {
+                  __treatError(null, __pending.pop(), null);
+                }
+              };
+              // Treat the response as error.
+              // As XMLHttpRequest considers 404 response sane.
+              __treatError = function (req, src, v) {
+                v = v || null;
+                __resultMap.set(src, false);
+                __fetchedMap.set(src, v);
+                __workerMap.delete(req);
+                __cntError += 1;
+
+                if (__onResult) {
+                  Promise.resolve({
+                    src: src,
+                    result: false,
+                    detail: v
+                  }).then(__onResult);
+                }
+                if (__resultMap.size === __rsrcMap.size) {
+                  if (__onDone) {
+                    Promise.resolve().then(__onDone);
+                  }
+                }
+                else {
+                  __utilise();
+                }
+              };
+              // Treat the response as success.
+              __treatOK = function (req, src, v) {
+                __resultMap.set(src, true);
+                __fetchedMap.set(src, v);
+                __workerMap.delete(req);
+                __cntOK += 1;
+
+                if (__onResult) {
+                  Promise.resolve({
+                    src: src,
+                    result: true,
+                    detail: v
+                  }).then(__onResult);
+                }
+                if (__resultMap.size === __rsrcMap.size) {
+                  if (__onDone) {
+                    Promise.resolve().then(__onDone);
+                  }
+                }
+                else {
+                  __utilise();
+                }
+              };
+
+              __handleError = function (evt) {
+                let src = __workerMap.get(evt.target);
+
+                if (!src) {
+                  return;
+                }
+                __treatError(evt.target, src, evt.detail || undefined);
+              };
+              __handleLoad = function (evt) {
+                let src = __workerMap.get(evt.target);
+
+                if (!src) {
+                  return;
+                }
+
+                if (evt.target instanceof XMLHttpRequest) {
+                  // 'load' event will be fired even if the status is not OK or
+                  // the response cannot be evaluated to the specified
+                  // type('responseType' attribute) as long as the data is
+                  // sent by the server.
+                  // TODO: test
+                  if (evt.target.status !== 200 ||
+                    evt.target.response === null) {
+                    __treatError(evt.target, src, evt.detail);
+                  }
+                  else {
+                    __treatOK(evt.target, src, evt.target.response);
+                  }
+                }
+                else if (evt.target instanceof Image) {
+                  // Remove the attached handlers.
+                  req.removeEventHandler('error', __handleError);
+                  req.removeEventHandler('load', __handleLoad);
+                  __treatOK(evt.target, src, evt.target);
+                }
+              };
+
+              Object.defineProperties(this, {
+                // Add the resource to fetch.
+                // TODO: test
+                add: {
+                  value: function (src) {
+                    __throwIfInAction(); // TODO: test
+                    __checkClass__(src, Tut.R.Source);
+                    if (__rsrcMap.has(src.id)) {
+                      __throwMyError__("duplicate id", __ERROR_CODES__.DUP);
+                    }
+
+                    __rsrcMap.set(src.id, src);
+                    return this;
+                  },
+                  configurable: true
+                },
+                // Remove the resource from the pack.
+                // Takes either a string or an instance of Tut.R.Source.
+                // Note that the method will remove the instance with the id of
+                // passed Tut.R.Source instance, not the instance itself.
+                // TODO: test
+                remove: {
+                  value: function (src) {
+                    __throwIfInAction(); // TODO: test
+
+                    if (src instanceof Tut.R.Source) {
+                      __rsrcMap.delete(src.id);
+                    }
+                    else if (typeof src === 'string') {
+                      __rsrcMap.delete(src);
+                    }
+                    else {
+                      Tut.throwFreezed(new TypeError("string or Tut.R.Source type required."));
+                    }
+
+                    return this;
+                  },
+                  configurable: true
+                },
+                // Returns an object describing the fetch process.
+                // retval.ok: number of resources fetched successfully
+                // retval.error: number of resources unable to fetch
+                // retval.pending: number of resources left to processed
+                // retval.map: a Map instance, resource id => value where
+                // value is either true, false or null when the corresponding
+                // resource is successfully fetched, unable to fetch or pending
+                // respectively.
+                // TODO: test
+                progress: {
+                  value: function () {
+                    return {
+                      ok: __cntOK,
+                      error: __cntError,
+                      pending: __pending.length,
+                      map: new Map(__resultMap)
+                    };
+                  },
+                  configurable: true
+                },
+                // Start the fetch process.
+                fetch: {
+                  value: function () {
+                    let p;
+
+                    __throwIfInAction(); // TODO: test
+                    if (__rsrcMap.size <= 0) { // TODO: test
+                      __throwMyError__("no resource added.", __ERROR_CODES__.NO_RSRC);
+                    }
+
+                    __reqErrCnt = __cntOK = __cntError = 0;
+                    __resultMap.clear();
+                    __fetchedMap.clear();
+                    // Fill '__pending' queue and init '__resultMap' with null.
+                    for (p of __rsrcMap) {
+                      __pending.push(p[1]);
+                      __resultMap.set(p[0], null);
+                    }
+                    // Reverse the array to fetch the resources in
+                    // descending order.
+                    __pending.reverse(); // TODO: test
+                    __utilise();
+
+                    return this;
+                  },
+                  configurable: true
+                },
+                // Return an object containing the fetched result
+                // (attribute: id => value: resource)
+                // Unresolved resources will be set as null.
+                // TODO: test
+                bundle: {
+                  value: function () {
+                    let ret = {};
+                    let p;
+
+                    for (p of __rsrcMap) {
+                      ret[p[0]] = (__resultMap.get(p[1]) && __fetchedMap.get(p[1]))
+                        || null;
+                    }
+                    return ret;
+                  },
+                  configurable: true
+                },
+
+                // Test if fetching is in process.
+                inAction: {
+                  get: function () {
+                    return __workerMap.size > 0 || __pending.length > 0;
+                  },
+                  configurable: true
+                },
+
+                // Set the number of requests to run simultaneously.
+                // The default value is 4. Passing 0 or a negative value will
+                // set it to the default value. This limit is essential
+                // because the browsers do not "queue" the requests when
+                // there's not enough system resource.
+                setWorkers: {
+                  value: function (x) {
+                    __checkType__(x, 'number');
+
+                    if (x <= 0) {
+                      __workers = __DEF_WORKERS__;
+                    }
+                    else {
+                      __workers = x;
+                    }
+
+                    if (this.inAction) { // TODO: test
+                      __utilise();
+                    }
+
+                    return __workers;
+                  },
+                  configurable: true
+                },
+                getWorkers: {
+                  value: function () {
+                    return __workers;
+                  },
+                  configurable: true
+                },
+                // Set the callback function that's called
+                // when the process is done.
+                onDone: {
+                  get: function () {
+                    return __onDone;
+                  },
+                  set: function (x) {
+                    __checkIfFunc__(x);
+                    __onDone = x.bind(this);
+                    return __onDone;
+                  },
+                  configurable: true
+                },
+                // Set the callback function that's called
+                // when one resource is processed. The first argument of
+                // the callback function will be an object with following
+                // attributes:
+                // 'src': Tut.R.Source instance
+                // 'result': a boolean value. True if successful.
+                // 'detail': The fetched resource if 'result' is true. An object
+                // returned by the browser describing the error. Eg: Event.detail
+                // TODO: test
+                onResult: {
+                  get: function () {
+                    return __onResult;
+                  },
+                  set: function (x) {
+                    __checkIfFunc__(x);
+                    __onResult = x.bind(this);
+                    return __onResult;
+                  },
+                  configurable: true
+                }
+              });
+
+              __throwIfInAction = function () {
+                if (this.inAction) {
+                  __throwMyError__("fetching in progress.", __ERROR_CODES__.IN_ACTION);
+                }
+              };
+              // TODO: test
+              // Initialise with the passed iterable.
+              if (iterable && iterable[Symbol.iterator]) {
+                let e;
+                for (e of iterable) {
+                  this.add(e);
+                }
+              }
+            }
+          },
+
+          Error: class extends Error {
+            constructor (msg, fn, l) {
+              var __code = __ERROR_CODES__.INTERNAL;
+
+              super(msg, fn, l);
+
+              Object.defineProperties(this, {
+                code: {
+                  get: function () {
+                    return __code;
+                  },
+                  set: function (x) {
+                    __checkType__(x, 'number');
+                    if (!__errorCodeSet__.has(x)) {
+                      Tut.throwFreezed(new RangeError("code not in range."));
+                    }
+
+                    __code = x;
+                    return x;
+                  }
+                }
+              });
+            }
+
+            static get CODE () {
+              return __ERROR_CODES__;
+            }
+          }
+        };
+
+        return __ns__;
+    })(),
+
+    ElementBuilder: class {
+      constructor (name) {
+        var nameType = typeof name;
+        var __attr = new Map();
+        var __text = null;
+
+        __checkType__(name, 'string');
+        if (name === '') {
+          Tut.throwFreezed(new TypeError("Empty string passed."));
+        }
+
+        Object.defineProperty(this, 'build', {
+          value: function () {
+            var e = document.createElement(name);
+
+            for (let p of __attr) {
+              e.setAttribute(p[0], p[1]);
+            }
+            if (__text !== null) {
+                Tut.setTextNode(e, __text);
+            }
+            return e;
+          },
+          configurable: true
+        });
+        Object.defineProperty(this, 'attr', {
+          value: function(a, v) {
+            __attr.set(a, v);
+            return this;
+          },
+          configurable: true
+        });
+        Object.defineProperty(this, 'text', {
+          value: function (x) {
+            __text = x;
+            return this;
+          },
+          configurable: true
+        });
+      }
+    },
+
+    mkElement: (name) => {
+      return new Tut.ElementBuilder(name);
+    },
+
+    padString: (str, n, c) => {
+      if (str.length >= n) {
+        return str;
+      }
+      c = c || ' ';
+      return str + c.repeat(n - str.length);
+    },
+
     printLegit: (str) => {
       if (typeof str == 'string' && str) {
         console.log(str);
@@ -249,6 +855,12 @@ var Tut = (() => {
       if (str && typeof str === 'string') {
         e.appendChild(document.createTextNode(str));
       }
+      return e;
+    },
+
+    appendAttr: (e, attr, val) => {
+      e.setAttribute(attr, e.getAttribute(attr) + val);
+      return e;
     },
 
     loadShader: (gl, src, type) => {
@@ -257,7 +869,7 @@ var Tut = (() => {
       shader = gl.createShader(type);
       if (!shader) {
         let e = new Tut.GLError(gl, "Could not create shader.");
-        e.throwFreezed();
+        Tut.throwFreezed(e);
       }
 
       gl.shaderSource(shader, src);
@@ -272,7 +884,7 @@ var Tut = (() => {
 
         gl.deleteShader(shader);
 
-        e.throwFreezed();
+        Tut.throwFreezed(e);
       }
 
       return shader;
@@ -330,7 +942,254 @@ var Tut = (() => {
       console.log(arr.join("\n"));
 
       console.log(gl.getSupportedExtensions().join("\n"));
-    }
+    },
+
+    Obj: (() => {
+        var __LINE_TYPES__ = Object.freeze(['v', 'vt', 'vn', 'vp', 'f', 'mtllib', 'usemtl']);
+        var __LINE_TYPES_STR__ = Object.freeze(__LINE_TYPES__.join(", "));
+        var __ns__;
+
+        __ns__ = {
+          ParseError: class extends Error {
+            constructor (msg, file, line) {
+              var __lineType = null;
+              var __at = -1;
+
+              super(msg, file, line);
+
+              Object.defineProperty(this, 'lineType', {
+                get: function () {
+                  return __lineType;
+                },
+                set: function (x) {
+                  if (x !== null && __LINE_TYPES__.indexOf(x) < 0) {
+                    throw new TypeError("Invalid line type. Expected: " + __LINE_TYPES_STR__);
+                  }
+                  __lineType = x;
+                  return x;
+                },
+                configurable: true
+              });
+              Object.defineProperty(this, 'at', {
+                get: function () {
+                  return __at;
+                },
+                set: function (x) {
+                  var passedType = typeof x;
+
+                  if (passedType !== 'number') {
+                    throw TypeError("Requires number type. Passed: " + passedType);
+                  }
+                  __at = x;
+                  return x;
+                },
+                configurable: true
+              });
+            }
+          },
+
+          parse: (() => {
+            var __throwIfNANf__ = (x, l) => {
+              var ret = parseFloat(x);
+
+              if (isNaN(ret)) {
+                let e = new Tut.Obj.ParseError("Invalid value at line " + l);
+                e.at = l;
+                Tut.throwFreezed(e);
+              }
+              return ret;
+            };
+            var __throwIfNANidx__ = (x, l) => {
+              var ret = parseInt(x);
+
+              if (isNaN(ret) || ret <= 0) {
+                let e = new Tut.Obj.ParseError("Invalid value at line " + l);
+                e.at = l;
+                Tut.throwFreezed(e);
+              }
+              return ret;
+            };
+            var __throwInvLine__ = (type, l) => {
+              let e = new Tut.Obj.ParseError("Invalid " + type + " line format at " + l);
+              e.lineType = type;
+              e.at = l;
+              Tut.throwFreezed(e);
+            };
+
+            return (src, supplement, opt) => {
+              var i, j, k;
+              var arrLines, arrWords, arrIndices, mapIndices, mapMaxIndex;
+              var vertices, uvs, normals, faces;
+              var w, index, to, from;
+              var ret;
+
+              opt = opt || {
+                loadList: {
+                  'uvs': true,
+                  'normals': true
+                }
+              };
+              arrLines = src.split(/(?:\r|\n|\r\n)+/gm);
+              vertices = [];
+              faces = [];
+              uvs = opt.uv ? [] : null;
+              normals = opt.normals ? [] : null;
+              mapIndices = [[], [], []];
+              mapMaxIndex = [-1, -1, -1];
+
+              for (i = 0; i < arrLines.length; i += 1) {
+                arrWords = arrLines[i].trim().toLowerCase().split(/\s+/);
+                switch (arrWords[0]) {
+                case 'v':
+                  if (arrWords.length === 4) { // Regular vertex
+                    vertices.push(__throwIfNANf__(arrWords[1], i));
+                    vertices.push(__throwIfNANf__(arrWords[2], i));
+                    vertices.push(__throwIfNANf__(arrWords[3], i));
+                  }
+                  else if (arrWords.length >= 5) { // Vertex w/ 'w'
+                    w = __throwIfNANf__(arrWords[4], i);
+                    vertices.push(__throwIfNANf__(arrWords[1], i) / w);
+                    vertices.push(__throwIfNANf__(arrWords[2], i) / w);
+                    vertices.push(__throwIfNANf__(arrWords[3], i) / w);
+                  }
+                  else {
+                    __throwInvLine__("v", i);
+                  }
+                  break;
+                case 'vt':
+                  if (arrWords.length < 3) {
+                    __throwInvLine__("vt", i);
+                  }
+                  if (uvs) {
+                    uvs.push(__throwIfNANf__(arrWords[1], i));
+                    uvs.push(__throwIfNANf__(arrWords[2], i));
+                  }
+                  else {
+                    // Validity check only.
+                    __throwIfNANf__(arrWords[1], i);
+                    __throwIfNANf__(arrWords[2], i);
+                  }
+                  break;
+                case 'vn':
+                  if (arrWords.length < 4) {
+                    __throwInvLine__('vn', i);
+                  }
+                  if (normals) {
+                    normals.push(__throwIfNANf__(arrWords[1], i));
+                    normals.push(__throwIfNANf__(arrWords[2], i));
+                    normals.push(__throwIfNANf__(arrWords[3], i));
+                  }
+                  else {
+                    // Validity check only.
+                    __throwIfNANf__(arrWords[1], i);
+                    __throwIfNANf__(arrWords[2], i);
+                    __throwIfNANf__(arrWords[3], i);
+                  }
+                  break;
+                case 'f':
+                  if (arrWords.length !== 4) {
+                    var nb_elements = arrWords.length - 1;
+                    var e = new Tut.Obj.ParseError("Unsupported face of " +
+                      nb_elements + (nb_elements == 1 ? " element" : " elements") +
+                      " at " + i + ". Only triangle supported.");
+                    e.at = l;
+                    Tut.throwFreezed(e);
+                  }
+                  for (j = 1; j < 4; j += 1) {
+                    arrIndices = arrWords[j].match(/^(\d+)(?:\/((?:\d+)?)(?:\/((?:\d+)?))?)?$/);
+                    if (arrIndices === null) {
+                      __throwInvLine__('f', i);
+                    }
+
+                    index = __throwIfNANidx__(arrIndices[1]);
+                    mapIndices[0].push(index);
+                    mapMaxIndex[0] = Math.max(mapMaxIndex[0], index);
+                    index = __throwIfNANidx__(arrIndices[2]);
+                    if (arrIndices[2]) {
+                      mapIndices[1].push(index);
+                      mapMaxIndex[1] = Math.max(mapMaxIndex[1], index);
+                    }
+                    index = __throwIfNANidx__(arrIndices[3]);
+                    if (arrIndices[3]) {
+                      mapIndices[2].push(index);
+                      mapMaxIndex[2] = Math.max(mapMaxIndex[2], index);
+                    }
+                  }
+                  break;
+                // default:
+                // Ignore unrecognised lines.
+                }
+              }
+              // Sanity check of parsed data.
+              if (mapIndices[0].length <= 0) {
+                Tut.throwFreezed(new Tut.Obj.ParseError("No polygonal face listed."));
+              }
+              if ((mapIndices[1].length && mapIndices[0].length !== mapIndices[1].length) ||
+                (mapIndices[2].length && mapIndices[0].length !== mapIndices[2].length)) {
+                let sb = [
+                  "Inconsistent polygonal face data(",
+                  mapIndices[0].length,
+                  ", ",
+                  mapIndices[1].length,
+                  ", ",
+                  mapIndices[2].length,
+                  ")"];
+                Tut.throwFreezed(new Tut.Obj.ParseError(sb.join("")));
+              }
+              for (i = 0; i < 3; i += 1) {
+                if (mapMaxIndex[i] > mapIndices[i].length) {
+                  let sb = [
+                    (['Vertex', 'UV', 'Normal'])[i],
+                    " index out of bound(",
+                    mapMaxIndex[i],
+                    " > ",
+                    mapIndices[i].length,
+                    ")"
+                  ];
+                  Tut.throwFreezed(new Tut.Obj.ParseError(sb.join("")));
+                }
+              }
+              // Construct return object.
+              // Rebuild UV and Normal vectors for use in OpenGL.
+              ret = {
+                array: {
+                  vertices: new Float32Array(vertices),
+                  uvs: opt.uv ? new Float32Array(uvs.length) : null,
+                  normals: opt.normals ? new Float32Array(normals.length) : null
+                },
+                indices: new Uint16Array(mapIndices[0])
+              };
+              if (ret.array.uvs) {
+                // Copy UV.
+                for (i = 0; i < mapIndices[0].length; i += 1) {
+                  to = (mapIndices[0][i] - 1) * 2;
+                  from = (mapIndices[1][i] - 1) * 2;
+                  ret.array.uvs[to] = uvs[from];
+                  ret.array.uvs[to + 1] = uvs[from + 1];
+                }
+              }
+              if (ret.array.normals) {
+                // Copy Normal.
+                for (i = 0; i < mapIndices[0].length; i += 1) {
+                  to = (mapIndices[0][i] - 1) * 3;
+                  from = (mapIndices[2][i] - 1) * 3;
+                  ret.array.normals[to] = normals[from];
+                  ret.array.normals[to + 1] = normals[from + 1];
+                  ret.array.normals[to + 2] = normals[from + 2];
+                }
+              }
+
+              return ret;
+            }
+          })(),
+
+          throwFreezed: (x) => {
+            throw Object.freeze(x);
+          }
+        };
+
+        return __ns__;
+    })()
   };
 
   // External library augmentation.

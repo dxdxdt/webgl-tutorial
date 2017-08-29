@@ -116,8 +116,7 @@
       if (!gl.getProgramParameter(progObj, gl.LINK_STATUS)) {
         let e = new Tut.GLError(gl, "Failed to link program");
         e.infoLog = progInfoLog;
-
-        e.throwFreezed();
+        Tut.throwFreezed(e);
       }
 
       gl.clearColor(0.0, 0.0, 0.0, 1.0);
