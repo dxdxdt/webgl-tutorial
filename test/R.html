@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+
+  <link rel="stylesheet" href="../mod/jasmine/jasmine.css" />
+
+  <script type="application/javascript" src="../mod/jasmine/jasmine.js"></script>
+  <script type="application/javascript" src="../mod/jasmine/jasmine-html.js"></script>
+  <script type="application/javascript" src="../mod/jasmine/boot.js"></script>
+
+  <script type="application/javascript" src="../mod/gl-matrix.js"></script>
+  <script type="application/javascript" src="../mod/tutils.js"></script>
+
+  <script type="application/javascript">
+    describe("Tut.R", function () {
+      describe("Set up", function () {
+        it("Tut.R.Source.constructor called with one or more wrong parameter " +
+          "should throw a TypeError", function () {
+          // Valid instantiation.
+          expect(function () {
+            new Tut.R.Source('test', 'https://example.com/', Tut.R.TYPE.DOCUMENT);
+          }).not.toThrow();
+          // Wrong ID type.
+          expect(function () {
+            new Tut.R.Source(123, 'https://example.com/', Tut.R.TYPE.DOCUMENT);
+          }).toThrowError(TypeError);
+          // Empty ID.
+          expect(function () {
+            new Tut.R.Source('', 'https://example.com/', Tut.R.TYPE.DOCUMENT);
+          }).toThrowError(TypeError);
+          // Wrong type type.
+          expect(function () {
+            new Tut.R.Source('test', 'https://example.com/', null);
+          }).toThrowError(TypeError);
+          // Wrong type value.
+          expect(function () {
+            new Tut.R.Source('test', 'https://example.com/', Tut.R.TYPE.IMAGE + 1);
+          }).toThrowError(RangeError);
+        });
+        it("Tut.R.Pack.add() should throw a TypeError if the parameter is not " +
+          "an instance of Tut.R.Source", function () {
+          expect(function () {
+            let rp = new Tut.R.Pack();
+            rp.add({id: 'test', uri: 'https://example.com/',
+              type: Tut.R.TYPE.TEXT});
+          }).toThrowError(TypeError);
+        });
+        it("Tut.R.Pack.add() should throw a Tut.R.Error if an id already exists.",
+          function () {
+          expect(function () {
+            let rp = new Tut.R.Pack();
+            rp.add(new Tut.R.Source('test', "https://example.com/",
+              Tut.R.TYPE.DOCUMENT));
+            rp.add(new Tut.R.Source('test', "R.html", Tut.R.TYPE.DOCUMENT));
+          }).toThrowError(Tut.R.Error);
+        });
+        it("Tut.R.Pack.add() should throw a Tut.R.Error if a parent path id already exists.",
+          function () {
+          expect(function () {
+            let rp = new Tut.R.Pack();
+            rp.add(new Tut.R.Source('test.1', "https://example.com/", Tut.R.TYPE.DOCUMENT));
+            rp.add(new Tut.R.Source('test.2', "R.html", Tut.R.TYPE.DOCUMENT));
+            rp.add(new Tut.R.Source('test', "R.html", Tut.R.TYPE.DOCUMENT));
+          }).toThrowError(Tut.R.Error);
+        });
+        it("Tut.R.Pack.fetch() should throw a Tut.R.Error if no resource is added.",
+          function () {
+          expect(function () {
+            let rp = new Tut.R.Pack();
+            rp.fetch();
+          }).toThrowError(Tut.R.Error);
+        });
+      });
+
+      describe("Initialisation", function () {
+        it("Iterable", function () {
+          let arr = [ // Utter nonsense.
+            new Tut.R.Source('0', "https://example.com/", Tut.R.TYPE.TEXT),
+            new Tut.R.Source('1', "https://example.com/", Tut.R.TYPE.ARRAYBUFFER),
+            new Tut.R.Source('2', "https://example.com/", Tut.R.TYPE.DOCUMENT),
+            new Tut.R.Source('3', "https://example.com/", Tut.R.TYPE.JSON)
+          ];
+          let rp = new Tut.R.Pack(arr);
+          let bundle = rp.bundle();
+          let rsrc, id;
+
+          for (rsrc of arr) {
+            expect(rsrc.id in bundle).toBe(true);
+          }
+          for (id in bundle) {
+            expect(arr.filter(function (e) {
+              return e.id === id;
+            }).length).toBeGreaterThan(0);
+          }
+        });
+      });
+
+      describe("Functionality", function () {
+        var rp;
+        var arrRsrc = [
+          new Tut.R.Source('text', "../LICENSE", Tut.R.TYPE.TEXT),
+          new Tut.R.Source('json', "materials/example.json", Tut.R.TYPE.JSON),
+          new Tut.R.Source('img.1', "https://upload.wikimedia.org/wikipedia/commons/f/fa/Very_Large_Array_in_New_Mexico.jpg", Tut.R.TYPE.ARRAYBUFFER),
+          new Tut.R.Source('img.2', "https://upload.wikimedia.org/wikipedia/commons/e/e5/Very_large_array_clouds.jpg", Tut.R.TYPE.IMAGE),
+          new Tut.R.Source('doc', "R.html", Tut.R.TYPE.DOCUMENT),
+          new Tut.R.Source('cors', "https://example.com/", Tut.R.TYPE.DOCUMENT) // Error case
+        ];
+        var xhr, img;
+
+        beforeEach(function () {
+          rp = new Tut.R.Pack(arrRsrc);
+        });
+
+        it("Vanilla use", function (done) {
+          var i = 0;
+
+          var handleResult = function (r) {
+            let p = rp.progress();
+
+            i += 1;
+            expect(p.ok + p.error).toBe(i);
+            expect(p.total).toBe(arrRsrc.length);
+            console.log(r);
+            console.log(p.map);
+          };
+          var handleDone = function () {
+            expect(function () {
+              let bundle;
+
+              // Sanity checks
+              bundle = rp.bundle();
+              expect('text' in bundle).toBe(true);
+              expect('json' in bundle).toBe(true);
+              expect('1' in bundle.img).toBe(true);
+              expect('2' in bundle.img).toBe(true);
+              expect('doc' in bundle).toBe(true);
+              expect('cors' in bundle).toBe(true);
+              // Type checks
+              expect(typeof bundle.text).toBe('string');
+              expect(typeof bundle.json).toBe('object');
+              expect(bundle.img['1'] instanceof ArrayBuffer).toBe(true);
+              expect(bundle.img['2'] instanceof HTMLImageElement).toBe(true);
+              expect(bundle.doc instanceof HTMLDocument).toBe(true);
+              expect(bundle.cors).toBe(null);
+            }).not.toThrow();
+            done();
+          };
+
+          expect(rp.getResources().size).toBe(arrRsrc.length);
+
+          expect(function () {
+            rp.onResult = handleResult;
+            rp.onDone = handleDone;
+            rp.fetch();
+          }).not.toThrow();
+        }, 10000);
+
+        it("Resource unavailable (give up)", function (done) {
+          var handleResult = function (r) {
+            expect(r.result).toBe(false);
+          };
+          var handleDone = function () {
+            // Restore XHR, Image.
+            XMLHttpRequest = xhr;
+            Image = img;
+            done();
+          };
+
+          expect(function () {
+            // Clobber XHR.
+            xhr = XMLHttpRequest;
+            img = Image;
+            XMLHttpRequest = Image = Object;
+
+            rp.onResult = handleResult;
+            rp.onDone = handleDone;
+            rp.fetch();
+          }).not.toThrow();
+        }, 10000);
+
+        it("Single worker", function (done) {
+          var handleDone = function () {
+            done();
+          };
+
+          expect(function () {
+            rp.onDone = handleDone;
+            rp.setWorkers(1);
+            rp.fetch();
+          }).not.toThrow();
+        }, 10000);
+
+        it("Increasing number of workers on fly", function (done) {
+          var handleResult = function () {
+            rp.setWorkers(3);
+            rp.onResult = null;
+          };
+          var handleDone = function () {
+            done();
+          };
+
+          expect(function () {
+            rp.onResult = handleResult;
+            rp.onDone = handleDone;
+            rp.setWorkers(1);
+            rp.fetch();
+          }).not.toThrow();
+        }, 10000);
+
+        it("Decreasing number of workers on fly", function (done) {
+          var handleResult = function () {
+            rp.setWorkers(1);
+            rp.onResult = null;
+          };
+          var handleDone = function () {
+            done();
+          };
+
+          expect(function () {
+            rp.onResult = handleResult;
+            rp.onDone = handleDone;
+            rp.fetch();
+          }).not.toThrow();
+        }, 10000);
+      });
+    });
+  </script>
+
+</head>
+<body>
+</body>
+</html>

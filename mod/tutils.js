@@ -334,17 +334,32 @@ var Tut = (() => {
           TYPE: __TYPES__,
           Source: class {
             constructor (__id, __uri, __type) {
+              var __path;
+
               Object.defineProperties(this, {
                 id: {
                   get: function () {
                     return __id;
                   },
                   set: function (x) {
+                    let path, tidyPath, e;
+
                     __checkType__(x, 'string');
                     if (x === '') {
-                      Tut.throwFreezed(new TypeError("Empty string id not allowed."));
+                      Tut.throwFreezed(new TypeError("Empty id not allowed."));
                     }
+
+                    path = x.split('.');
+                    tidyPath = [];
+                    for (e of path) {
+                      if (e) {
+                        tidyPath.push(e);
+                      }
+                    }
+
                     __id = x;
+                    __path = Object.freeze(tidyPath);
+
                     return x;
                   },
                   configurable: true
@@ -366,9 +381,15 @@ var Tut = (() => {
                   },
                   set: function (x) {
                     __checkType__(x, 'number');
-                    __checkTypeRange__(x); // TODO: test
+                    __checkTypeRange__(x);
                     __type = x;
                     return x;
+                  },
+                  configurable: true
+                },
+                path: {
+                  get: function () {
+                    return __path;
                   },
                   configurable: true
                 }
@@ -391,9 +412,10 @@ var Tut = (() => {
               var __workerMap = new Map(); // Request instance => Source
               // Number of requests to process simultaneously
               var __workers = __DEF_WORKERS__;
+              var __lookupTree = {};
               // Protected methods
               var __deploy, __utilise, __giveup, __throwIfInAction,
-                __treatError, __treatOK;
+                __treatError, __treatOK, __assignPath, __stepPath, __delPath;
               var __handleError, __handleLoad; // Event handlers
               var __onResult = null, __onDone = null;
               var __cntError = 0, __cntOK = 0;
@@ -411,19 +433,19 @@ var Tut = (() => {
                 }
 
                 switch (src.type) {
-                case __TYPES__.TYPE.TEXT:
-                case __TYPES__.TYPE.ARRAYBUFFER:
-                case __TYPES__.TYPE.DOCUMENT:
-                case __TYPES__.TYPE.JSON:
+                case __TYPES__.TEXT:
+                case __TYPES__.ARRAYBUFFER:
+                case __TYPES__.DOCUMENT:
+                case __TYPES__.JSON:
                   req = new XMLHttpRequest();
-                  req.open("GET", src.uri);
-                  req.responseType = __type2responseType__(src.type);
                   req.addEventListener('abort', __handleError);
                   req.addEventListener('error', __handleError);
                   req.addEventListener('load', __handleLoad);
-                  req.send();
+                  req.open("GET", src.uri);
+                  req.responseType = __type2responseType__(src.type);
+                  req.send(null);
                   break;
-                case __TYPES__.TYPE.IMAGE:
+                case __TYPES__.IMAGE:
                   req = new Image();
                   req.addEventListener('error', __handleError);
                   req.addEventListener('load', __handleLoad);
@@ -437,7 +459,7 @@ var Tut = (() => {
               __utilise = function () {
                 try {
                   while (__workerMap.size < __workers && __pending.length > 0) {
-                    __deploy(__pending[0]);
+                    __deploy(__pending[__pending.length - 1]);
                     __pending.pop();
                     __reqErrCnt = 0;
                   }
@@ -449,9 +471,8 @@ var Tut = (() => {
                     __giveup();
                   }
                   else {
-                    // TODO: test
                     // Probably system resource shortage.
-                    if (__workerMap.length <= 0 && __pending.length > 0) {
+                    if (__workerMap.size <= 0 && __pending.length > 0) {
                       // Got resource to fetch, but no worker to wait around.
                       if (__reqErrCnt >= __GIVE_UP_AFTER__) {
                         // Tried enough. The system's in a bad shape.
@@ -490,7 +511,7 @@ var Tut = (() => {
                     detail: v
                   }).then(__onResult);
                 }
-                if (__resultMap.size === __rsrcMap.size) {
+                if ((__cntError + __cntOK) === __rsrcMap.size) {
                   if (__onDone) {
                     Promise.resolve().then(__onDone);
                   }
@@ -513,7 +534,7 @@ var Tut = (() => {
                     detail: v
                   }).then(__onResult);
                 }
-                if (__resultMap.size === __rsrcMap.size) {
+                if ((__cntError + __cntOK) === __rsrcMap.size) {
                   if (__onDone) {
                     Promise.resolve().then(__onDone);
                   }
@@ -521,6 +542,67 @@ var Tut = (() => {
                 else {
                   __utilise();
                 }
+              };
+              // Assign deep in a object.
+              __assignPath = function (to, path, v) {
+                let i, lim, e;
+
+                lim = path.length - 1;
+                for (i = 0; i < lim; i += 1) {
+                  e = path[i];
+
+                  if (to[e]) {
+                    to = to[e];
+                  }
+                  else {
+                    to[e] = {};
+                    to = to[e];
+                  }
+                }
+                to[path[lim]] = v;
+              };
+              // Step into the tree, check if the path is already there.
+              __stepPath = function (tree, path) {
+                let i, lim, e, tn;
+
+                lim = path.length - 1;
+                for (i = 0; i < lim; i += 1) {
+                  e = path[i];
+                  tn = typeof tree[e];
+
+                  if (tn === 'undefined') {
+                    return false;
+                  }
+                  else if (tn !== 'object') {
+                    return true;
+                  }
+                  else {
+                    tree = tree[e];
+                  }
+                }
+
+                return typeof tree[path[lim]] !== 'undefined';
+              };
+              __delPath = function (tree, path) {
+                let i, lim, e;
+
+                lim = path.length - 1;
+                for (i = 0; i < lim; i += 1) {
+                  e = path[i];
+
+                  if (typeof tree[e] !== 'object') {
+                    return false;
+                  }
+                  else {
+                    tree = tree[e];
+                  }
+                }
+
+                if (typeof tree[path[lim]] !== 'undefined') {
+                  delete tree[path[lim]];
+                  return true;
+                }
+                return false;
               };
 
               __handleError = function (evt) {
@@ -543,7 +625,6 @@ var Tut = (() => {
                   // the response cannot be evaluated to the specified
                   // type('responseType' attribute) as long as the data is
                   // sent by the server.
-                  // TODO: test
                   if (evt.target.status !== 200 ||
                     evt.target.response === null) {
                     __treatError(evt.target, src, evt.detail);
@@ -554,24 +635,25 @@ var Tut = (() => {
                 }
                 else if (evt.target instanceof Image) {
                   // Remove the attached handlers.
-                  req.removeEventHandler('error', __handleError);
-                  req.removeEventHandler('load', __handleLoad);
+                  evt.target.removeEventListener('error', __handleError);
+                  evt.target.removeEventListener('load', __handleLoad);
                   __treatOK(evt.target, src, evt.target);
                 }
               };
 
               Object.defineProperties(this, {
                 // Add the resource to fetch.
-                // TODO: test
                 add: {
                   value: function (src) {
                     __throwIfInAction(); // TODO: test
                     __checkClass__(src, Tut.R.Source);
-                    if (__rsrcMap.has(src.id)) {
+                    if (__rsrcMap.has(src.id) ||
+                      __stepPath(__lookupTree, src.path)) {
                       __throwMyError__("duplicate id", __ERROR_CODES__.DUP);
                     }
 
                     __rsrcMap.set(src.id, src);
+                    __assignPath(__lookupTree, src.path, true);
                     return this;
                   },
                   configurable: true
@@ -583,17 +665,22 @@ var Tut = (() => {
                 // TODO: test
                 remove: {
                   value: function (src) {
+                    let rsrc;
+
                     __throwIfInAction(); // TODO: test
 
                     if (src instanceof Tut.R.Source) {
+                      rsrc = __rsrcMap.get(src.id);
                       __rsrcMap.delete(src.id);
                     }
                     else if (typeof src === 'string') {
+                      rsrc = __rsrcMap.get(src);
                       __rsrcMap.delete(src);
                     }
                     else {
                       Tut.throwFreezed(new TypeError("string or Tut.R.Source type required."));
                     }
+                    __delPath(__lookupTree, rsrc.path);
 
                     return this;
                   },
@@ -602,18 +689,17 @@ var Tut = (() => {
                 // Returns an object describing the fetch process.
                 // retval.ok: number of resources fetched successfully
                 // retval.error: number of resources unable to fetch
-                // retval.pending: number of resources left to processed
+                // retval.total: total number of resources
                 // retval.map: a Map instance, resource id => value where
                 // value is either true, false or null when the corresponding
                 // resource is successfully fetched, unable to fetch or pending
                 // respectively.
-                // TODO: test
                 progress: {
                   value: function () {
                     return {
                       ok: __cntOK,
                       error: __cntError,
-                      pending: __pending.length,
+                      total: __rsrcMap.size,
                       map: new Map(__resultMap)
                     };
                   },
@@ -625,7 +711,7 @@ var Tut = (() => {
                     let p;
 
                     __throwIfInAction(); // TODO: test
-                    if (__rsrcMap.size <= 0) { // TODO: test
+                    if (__rsrcMap.size <= 0) {
                       __throwMyError__("no resource added.", __ERROR_CODES__.NO_RSRC);
                     }
 
@@ -635,11 +721,8 @@ var Tut = (() => {
                     // Fill '__pending' queue and init '__resultMap' with null.
                     for (p of __rsrcMap) {
                       __pending.push(p[1]);
-                      __resultMap.set(p[0], null);
+                      __resultMap.set(p[1], null);
                     }
-                    // Reverse the array to fetch the resources in
-                    // descending order.
-                    __pending.reverse(); // TODO: test
                     __utilise();
 
                     return this;
@@ -648,17 +731,21 @@ var Tut = (() => {
                 },
                 // Return an object containing the fetched result
                 // (attribute: id => value: resource)
-                // Unresolved resources will be set as null.
-                // TODO: test
+                // Unresolved resources will be set as null. If there's one or
+                // more commas in the resource id, the resolved resource will
+                // be assigned in the sub object. For example, if the id is
+                // 'img.a', the resource will be retval.img.a. Deeper paths like
+                // 'img.a.b.c' are allowed.
                 bundle: {
                   value: function () {
-                    let ret = {};
                     let p;
+                    let ret = {};
 
                     for (p of __rsrcMap) {
-                      ret[p[0]] = (__resultMap.get(p[1]) && __fetchedMap.get(p[1]))
-                        || null;
+                      __assignPath(ret, p[1].path,
+                        (__resultMap.get(p[1]) && __fetchedMap.get(p[1])) || null);
                     }
+
                     return ret;
                   },
                   configurable: true
@@ -672,6 +759,12 @@ var Tut = (() => {
                   configurable: true
                 },
 
+                getResources: {
+                  value: function () {
+                    return new Map(__rsrcMap);
+                  },
+                  configurable: true
+                },
                 // Set the number of requests to run simultaneously.
                 // The default value is 4. Passing 0 or a negative value will
                 // set it to the default value. This limit is essential
@@ -688,7 +781,7 @@ var Tut = (() => {
                       __workers = x;
                     }
 
-                    if (this.inAction) { // TODO: test
+                    if (this.inAction) {
                       __utilise();
                     }
 
@@ -709,8 +802,14 @@ var Tut = (() => {
                     return __onDone;
                   },
                   set: function (x) {
-                    __checkIfFunc__(x);
-                    __onDone = x.bind(this);
+                    if (x) {
+                      __checkIfFunc__(x);
+                      __onDone = x.bind(this);
+                    }
+                    else {
+                      __onDone = null;
+                    }
+
                     return __onDone;
                   },
                   configurable: true
@@ -723,26 +822,30 @@ var Tut = (() => {
                 // 'result': a boolean value. True if successful.
                 // 'detail': The fetched resource if 'result' is true. An object
                 // returned by the browser describing the error. Eg: Event.detail
-                // TODO: test
                 onResult: {
                   get: function () {
                     return __onResult;
                   },
                   set: function (x) {
-                    __checkIfFunc__(x);
-                    __onResult = x.bind(this);
+                    if (x) {
+                      __checkIfFunc__(x);
+                      __onResult = x.bind(this);
+                    }
+                    else {
+                      __onResult = null;
+                    }
+
                     return __onResult;
                   },
                   configurable: true
                 }
               });
 
-              __throwIfInAction = function () {
+              __throwIfInAction = (function () {
                 if (this.inAction) {
                   __throwMyError__("fetching in progress.", __ERROR_CODES__.IN_ACTION);
                 }
-              };
-              // TODO: test
+              }).bind(this);
               // Initialise with the passed iterable.
               if (iterable && iterable[Symbol.iterator]) {
                 let e;
@@ -827,11 +930,18 @@ var Tut = (() => {
         });
       }
     },
-
+    // Freeze the passed object and throw it.
+    throwFreezed: (x) => {
+      throw Object.freeze(x);
+    },
+    // Convenience function for instantiating 'ElementBuilder'.
     mkElement: (name) => {
       return new Tut.ElementBuilder(name);
     },
-
+    // Pad the string with a character.
+    // 'str': the string to pad
+    // 'n': number of characters used to pad the string
+    // 'c': the character to pad with. Default is a space(' ')
     padString: (str, n, c) => {
       if (str.length >= n) {
         return str;
@@ -839,7 +949,7 @@ var Tut = (() => {
       c = c || ' ';
       return str + c.repeat(n - str.length);
     },
-
+    // Print to the console only if the argument is non-empty string.
     printLegit: (str) => {
       if (typeof str == 'string' && str) {
         console.log(str);
@@ -847,7 +957,13 @@ var Tut = (() => {
       }
       return false;
     },
-
+    // Set a text node of an HTML element. Clears existing child nodes.
+    // (since a text node is usually the only child node of an HTML element
+    // created programmatically.)
+    // This is to avoid using the innerHTML attribute as it can be exploited
+    // to inject malicious code.
+    // 'e': the element to append a text node
+    // 'str': the string to create a text node with
     setTextNode: (e, str) => {
       while (e.firstChild) {
         e.removeChild(e.firstChild);
@@ -857,12 +973,22 @@ var Tut = (() => {
       }
       return e;
     },
-
+    // Append a string to an HTML element attribute.
+    // Used to do something like this: element.class += ' another_class';
+    // 'e': the element to manipulate
+    // 'attr': the attribute to append a value
+    // 'val': a value to append
     appendAttr: (e, attr, val) => {
-      e.setAttribute(attr, e.getAttribute(attr) + val);
+      e.setAttribute(attr, (e.getAttribute(attr) || "") + val);
       return e;
     },
-
+    // Prep a shader. This function does everything to get a shader linkable.
+    // Throws Tut.GLError if anything goes wrong. Will print the string returned
+    // from the shader compiler. Returns a shader GL object.
+    // 'gl': a WebGL context
+    // 'src': the string of the shader program to compile
+    // 'type': the type of the shader program. Must be one of gl.VERTEX_SHADER
+    // or gl.FRAGMENT_SHADER.
     loadShader: (gl, src, type) => {
       var shader, shaderInfo;
 
@@ -889,7 +1015,9 @@ var Tut = (() => {
 
       return shader;
     },
-
+    // Prints the capability of the WebGL rendering context to the console.
+    // For debugging purpose.
+    // 'gl': a WebGL rendering context
     printGLCap: (gl) => {
       var shaderPrecision = (s, t) => {
         var x = gl.getShaderPrecisionFormat(gl[s], gl[t]);
@@ -924,7 +1052,7 @@ var Tut = (() => {
       arr.push(glParam("GL_MAX_VARYING_VECTORS"));
       arr.push(glParam("GL_ALIASED_POINT_SIZE_RANGE"));
       arr.push(glParam("GL_SAMPLES"));
-      console.log(arr.join("\n"));
+      console.info(arr.join("\n"));
 
       arr = [];
       arr.push(shaderPrecision("VERTEX_SHADER", "LOW_FLOAT"));
@@ -939,9 +1067,9 @@ var Tut = (() => {
       arr.push(shaderPrecision("FRAGMENT_SHADER", "LOW_INT"));
       arr.push(shaderPrecision("FRAGMENT_SHADER", "MEDIUM_INT"));
       arr.push(shaderPrecision("FRAGMENT_SHADER", "HIGH_INT"));
-      console.log(arr.join("\n"));
+      console.info(arr.join("\n"));
 
-      console.log(gl.getSupportedExtensions().join("\n"));
+      console.info(gl.getSupportedExtensions().join("\n"));
     },
 
     Obj: (() => {
@@ -1182,10 +1310,6 @@ var Tut = (() => {
               return ret;
             }
           })(),
-
-          throwFreezed: (x) => {
-            throw Object.freeze(x);
-          }
         };
 
         return __ns__;
@@ -1234,6 +1358,10 @@ var Tut = (() => {
     };
   };
 
+  // (reversed)Accumulative matrix/vertex operations. Requires at least
+  // 3 arguments
+  // First argument: an output matrix
+  // The arguments after that: operands
   mat4.aadd = __fabAcc__(mat4, mat4.add);
   mat4.asub = __fabAcc__(mat4, mat4.sub);
   mat4.amul = __fabAcc__(mat4, mat4.mul);
