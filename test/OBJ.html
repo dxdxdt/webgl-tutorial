@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+
+  <link rel="stylesheet" href="../mod/jasmine/jasmine.css" />
+
+  <script type="application/javascript" src="../mod/jasmine/jasmine.js"></script>
+  <script type="application/javascript" src="../mod/jasmine/jasmine-html.js"></script>
+  <script type="application/javascript" src="../mod/jasmine/boot.js"></script>
+
+  <script type="application/javascript" src="../mod/gl-matrix.js"></script>
+  <script type="application/javascript" src="../mod/tutils.js"></script>
+
+  <script type="application/javascript">
+  (function () {
+    "use strict";
+
+    describe("Tut.OBJ.ParseError", function () {
+      it("setting a wrong value to lineType should throw", function () {
+        expect(function () {
+          let e = new Tut.OBJ.ParseError();
+          e.lineType = 420;
+        }).toThrowError(TypeError);
+        expect(function () {
+          let e = new Tut.OBJ.ParseError();
+          e.lineType = 'everyday';
+        }).toThrowError(TypeError);
+      });
+    });
+
+    describe("Tut.OBJ.parse", function () {
+      var arrRsrc = [
+        new Tut.R.Source('legit-example', "../assets/obj/example.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('legit-teapot', "../assets/obj/teapot.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('legit-mixed_space', "materials/obj/example_mixed-space.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-diff_json', "materials/example.json", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-il_f', "materials/obj/example_il-f.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-il_v', "materials/obj/example_il-v.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-inc_vn', "materials/obj/example_inc-vn.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-inc_vt', "materials/obj/example_inc-vt.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-nanf', "materials/obj/example_NANf.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-nanidx_inv', "materials/obj/example_NANidx-inv.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-nanidx_neg', "materials/obj/example_NANidx-neg.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-nanidx_null', "materials/obj/example_NANidx-null.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-noface', "materials/obj/example_noface.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-oob_v', "materials/obj/example_oob-v.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-oob_vn', "materials/obj/example_oob-vn.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-oob_vt', "materials/obj/example_oob-vt.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('error-unimpl_f', "materials/obj/example_unimpl-f.obj", Tut.R.TYPE.TEXT)
+      ];
+      var rp;
+      var specThrowTest, specLegitTest, logException;
+      var checkBounds;
+
+      let rsrc;
+
+      checkBounds = function (data) {
+        let idx;
+
+        for (idx of data.indices) {
+          expect(idx * 3 + 2).toBeLessThanOrEqual(data.array.vertices.length);
+          if (data.array.uvs.length) {
+            expect(idx * 2 + 1).toBeLessThanOrEqual(data.array.uvs.length);
+          }
+          if (data.array.normals.length) {
+            expect(idx * 3 + 2).toBeLessThanOrEqual(data.array.normals.length);
+          }
+        }
+      };
+
+      specThrowTest = function (id) {
+        it(id, function () {
+          expect(function () {
+            let ret;
+
+            try {
+              ret = Tut.OBJ.parse(rp[id]);
+              logException(id, ret);
+            }
+            catch (e) {
+              if (!(e instanceof Tut.OBJ.ParseError)) {
+                logException(id, e);
+              }
+              throw e;
+            }
+          }).toThrowError(Tut.OBJ.ParseError);
+        });
+      };
+      specLegitTest = function (id) {
+        it(id, function () {
+          expect(function () {
+            let data;
+
+            try {
+              console.time(id);
+              data = Tut.OBJ.parse(rp[id]);
+              console.timeEnd(id);
+
+              switch(id) {
+              case 'legit-example':
+              case 'legit-mixed_space':
+                expect(data.array.vertices.length).toBe(8 * 3);
+                checkBounds(data);
+                break;
+              case 'legit-teapot':
+                expect(data.array.vertices.length).toBe(3644 * 3);
+                expect(data.array.uvs.length).toBe(0);
+                expect(data.array.normals.length).toBe(0);
+                checkBounds(data);
+                break;
+              }
+            }
+            catch (e) {
+              if (e instanceof Tut.OBJ.ParseError) {
+                logException(id, e);
+              }
+              throw e;
+            }
+          }).not.toThrowError(Tut.OBJ.ParseError);
+        });
+      };
+      logException = function (id, e) {
+        console.group(id);
+        console.log(e);
+        console.groupEnd();
+      };
+
+      beforeAll(function (done) {
+        let pack = new Tut.R.Pack(arrRsrc);
+
+        pack.onResult = function (r) {
+          if (!r.result) {
+            fail();
+          }
+        };
+        pack.onDone = function () {
+          rp = this.bundle();
+          done();
+        };
+        pack.fetch();
+      });
+
+      for (rsrc of arrRsrc) {
+        if (rsrc.id.startsWith('error-')) {
+          specThrowTest(rsrc.id);
+        }
+        else if (rsrc.id.startsWith('legit-')) {
+          specLegitTest(rsrc.id);
+        }
+      }
+    });
+  })();
+  </script>
+
+</head>
+<body>
+</body>
+</html>

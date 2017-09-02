@@ -1,6 +1,6 @@
-"use strict";
-
+/* global vec2, vec3, vec4, mat2, mat2d, mat3, mat4 */
 var Tut = (() => {
+  "use strict";
   // Scope local decl ...
   var __ret__; // Scope object.
   const __RAD2DEG__ = Math.PI / 180;
@@ -201,7 +201,7 @@ var Tut = (() => {
           this.angle.v = wrapAngle(this.angle.v);
 
           // Limit verticle angle so that the camera won't go upside down.
-          if (true) {
+          {
             if (this.angle.v > Math.PI / 2) {
               this.angle.v = Math.PI / 2;
             }
@@ -891,7 +891,6 @@ var Tut = (() => {
 
     ElementBuilder: class {
       constructor (name) {
-        var nameType = typeof name;
         var __attr = new Map();
         var __text = null;
 
@@ -1072,9 +1071,11 @@ var Tut = (() => {
       console.info(gl.getSupportedExtensions().join("\n"));
     },
 
-    Obj: (() => {
-        var __LINE_TYPES__ = Object.freeze(['v', 'vt', 'vn', 'vp', 'f', 'mtllib', 'usemtl']);
-        var __LINE_TYPES_STR__ = Object.freeze(__LINE_TYPES__.join(", "));
+    // Simple Wavefront OBJ file parser
+    OBJ: (() => {
+        let lineTypes = ['v', 'vt', 'vn', 'vp', 'f', 'mtllib', 'usemtl'];
+        var __LINE_TYPES__ = Object.freeze(new Set(lineTypes));
+        var __LINE_TYPES_STR__ = Object.freeze(lineTypes.join(", "));
         var __ns__;
 
         __ns__ = {
@@ -1089,8 +1090,9 @@ var Tut = (() => {
                 get: function () {
                   return __lineType;
                 },
-                set: function (x) {
-                  if (x !== null && __LINE_TYPES__.indexOf(x) < 0) {
+                set: function (x) { // TODO: test
+                  __checkType__(x, 'string');
+                  if (x !== null && (!__LINE_TYPES__.has(x))) {
                     throw new TypeError("Invalid line type. Expected: " + __LINE_TYPES_STR__);
                   }
                   __lineType = x;
@@ -1103,11 +1105,7 @@ var Tut = (() => {
                   return __at;
                 },
                 set: function (x) {
-                  var passedType = typeof x;
-
-                  if (passedType !== 'number') {
-                    throw TypeError("Requires number type. Passed: " + passedType);
-                  }
+                  __checkType__(x, 'number');
                   __at = x;
                   return x;
                 },
@@ -1116,40 +1114,67 @@ var Tut = (() => {
             }
           },
 
+          // Parses an OBJ file format string and returns an object containing
+          // parsed data like vertices and normals.
+          // 'src': a string of OBJ file content
+          // 'supplement': reserved parameter to pass supplementary data such as
+          // mtllib file. This parameter will not be referenced at all.
+          // 'opt': parsing options object. The caller can pass this to get
+          // a different parsing result. Below is an example option:
+          // {
+          //   loadList: {
+          //     // Whether to include UV coordinates in the return value.
+          //     'uvs': true,
+          //     // Whether to include normal vectors in the return value.
+          //     'normals': true
+          //   }
+          // }
+          // Return value:
+          // {
+          //   array: { // Vertex attributes
+          //     vertices: Float32Array,
+          //     uvs: Float32Array or null,
+          //     normals: Float32Array or null
+          //   },
+          //   indices: Uint16Array // glDrawElement() parameter.
+          // }
           parse: (() => {
+            // Parse a string expected to be a float.
             var __throwIfNANf__ = (x, l) => {
               var ret = parseFloat(x);
 
               if (isNaN(ret)) {
-                let e = new Tut.Obj.ParseError("Invalid value at line " + l);
+                let e = new Tut.OBJ.ParseError("Invalid value at line " + l);
                 e.at = l;
                 Tut.throwFreezed(e);
               }
               return ret;
             };
+            // Parse a string expected to be an index.
             var __throwIfNANidx__ = (x, l) => {
               var ret = parseInt(x);
 
               if (isNaN(ret) || ret <= 0) {
-                let e = new Tut.Obj.ParseError("Invalid value at line " + l);
+                let e = new Tut.OBJ.ParseError("Invalid value at line " + l);
                 e.at = l;
                 Tut.throwFreezed(e);
               }
               return ret;
             };
+            // Convenience function that throws an exception for invalid line.
             var __throwInvLine__ = (type, l) => {
-              let e = new Tut.Obj.ParseError("Invalid " + type + " line format at " + l);
+              let e = new Tut.OBJ.ParseError("Invalid " + type + " line format at " + l);
               e.lineType = type;
               e.at = l;
               Tut.throwFreezed(e);
             };
 
             return (src, supplement, opt) => {
-              var i, j, k;
-              var arrLines, arrWords, arrIndices, mapIndices, mapMaxIndex;
-              var vertices, uvs, normals, faces;
-              var w, index, to, from;
-              var ret;
+              let i, j;
+              let arrLines, arrWords, arrIndices, mapIndices, mapMaxIndex;
+              let vertices, uvs, normals;
+              let w, index, to, from;
+              let ret;
 
               opt = opt || {
                 loadList: {
@@ -1157,13 +1182,13 @@ var Tut = (() => {
                   'normals': true
                 }
               };
-              arrLines = src.split(/(?:\r|\n|\r\n)+/gm);
               vertices = [];
-              faces = [];
-              uvs = opt.uv ? [] : null;
-              normals = opt.normals ? [] : null;
+              uvs = opt.loadList.uvs ? [] : null;
+              normals = opt.loadList.normals ? [] : null;
               mapIndices = [[], [], []];
               mapMaxIndex = [-1, -1, -1];
+
+              arrLines = src.split(/(?:\r|\n|\r\n)+/gm);
 
               for (i = 0; i < arrLines.length; i += 1) {
                 arrWords = arrLines[i].trim().toLowerCase().split(/\s+/);
@@ -1217,10 +1242,10 @@ var Tut = (() => {
                 case 'f':
                   if (arrWords.length !== 4) {
                     var nb_elements = arrWords.length - 1;
-                    var e = new Tut.Obj.ParseError("Unsupported face of " +
+                    var e = new Tut.OBJ.ParseError("Unsupported face of " +
                       nb_elements + (nb_elements == 1 ? " element" : " elements") +
                       " at " + i + ". Only triangle supported.");
-                    e.at = l;
+                    e.at = i;
                     Tut.throwFreezed(e);
                   }
                   for (j = 1; j < 4; j += 1) {
@@ -1229,16 +1254,16 @@ var Tut = (() => {
                       __throwInvLine__('f', i);
                     }
 
-                    index = __throwIfNANidx__(arrIndices[1]);
+                    index = __throwIfNANidx__(arrIndices[1], i) - 1;
                     mapIndices[0].push(index);
                     mapMaxIndex[0] = Math.max(mapMaxIndex[0], index);
-                    index = __throwIfNANidx__(arrIndices[2]);
                     if (arrIndices[2]) {
+                      index = __throwIfNANidx__(arrIndices[2], i) - 1;
                       mapIndices[1].push(index);
                       mapMaxIndex[1] = Math.max(mapMaxIndex[1], index);
                     }
-                    index = __throwIfNANidx__(arrIndices[3]);
                     if (arrIndices[3]) {
+                      index = __throwIfNANidx__(arrIndices[3], i) - 1;
                       mapIndices[2].push(index);
                       mapMaxIndex[2] = Math.max(mapMaxIndex[2], index);
                     }
@@ -1250,7 +1275,7 @@ var Tut = (() => {
               }
               // Sanity check of parsed data.
               if (mapIndices[0].length <= 0) {
-                Tut.throwFreezed(new Tut.Obj.ParseError("No polygonal face listed."));
+                Tut.throwFreezed(new Tut.OBJ.ParseError("No polygonal face listed."));
               }
               if ((mapIndices[1].length && mapIndices[0].length !== mapIndices[1].length) ||
                 (mapIndices[2].length && mapIndices[0].length !== mapIndices[2].length)) {
@@ -1262,19 +1287,23 @@ var Tut = (() => {
                   ", ",
                   mapIndices[2].length,
                   ")"];
-                Tut.throwFreezed(new Tut.Obj.ParseError(sb.join("")));
+                Tut.throwFreezed(new Tut.OBJ.ParseError(sb.join("")));
               }
-              for (i = 0; i < 3; i += 1) {
-                if (mapMaxIndex[i] > mapIndices[i].length) {
-                  let sb = [
-                    (['Vertex', 'UV', 'Normal'])[i],
-                    " index out of bound(",
-                    mapMaxIndex[i],
-                    " > ",
-                    mapIndices[i].length,
-                    ")"
-                  ];
-                  Tut.throwFreezed(new Tut.Obj.ParseError(sb.join("")));
+              {
+                // Out of bounds check.
+                let checkBounds = function (name, cnt, max) {
+                  if (cnt <= max) {
+                    let sb = [name, " index out of bound(", cnt, " <= ", max, ")"];
+                    Tut.throwFreezed(new Tut.OBJ.ParseError(sb.join("")));
+                  }
+                };
+
+                checkBounds('Vertex', vertices.length / 3, mapMaxIndex[0]);
+                if (uvs) {
+                  checkBounds('Vertex', uvs.length / 2, mapMaxIndex[1]);
+                }
+                if (normals) {
+                  checkBounds('Vertex', normals.length / 3, mapMaxIndex[2]);
                 }
               }
               // Construct return object.
@@ -1282,16 +1311,16 @@ var Tut = (() => {
               ret = {
                 array: {
                   vertices: new Float32Array(vertices),
-                  uvs: opt.uv ? new Float32Array(uvs.length) : null,
-                  normals: opt.normals ? new Float32Array(normals.length) : null
+                  uvs: opt.loadList.uvs ? new Float32Array(mapIndices[1].length > 0 ? vertices.length / 3 * 2 : 0) : null,
+                  normals: opt.loadList.normals ? new Float32Array(mapIndices[2].length > 0 ? vertices.length : 0) : null
                 },
                 indices: new Uint16Array(mapIndices[0])
               };
               if (ret.array.uvs) {
                 // Copy UV.
                 for (i = 0; i < mapIndices[0].length; i += 1) {
-                  to = (mapIndices[0][i] - 1) * 2;
-                  from = (mapIndices[1][i] - 1) * 2;
+                  to = mapIndices[0][i] * 2;
+                  from = mapIndices[1][i] * 2;
                   ret.array.uvs[to] = uvs[from];
                   ret.array.uvs[to + 1] = uvs[from + 1];
                 }
@@ -1299,8 +1328,8 @@ var Tut = (() => {
               if (ret.array.normals) {
                 // Copy Normal.
                 for (i = 0; i < mapIndices[0].length; i += 1) {
-                  to = (mapIndices[0][i] - 1) * 3;
-                  from = (mapIndices[2][i] - 1) * 3;
+                  to = mapIndices[0][i] * 3;
+                  from = mapIndices[2][i] * 3;
                   ret.array.normals[to] = normals[from];
                   ret.array.normals[to + 1] = normals[from + 1];
                   ret.array.normals[to + 2] = normals[from + 2];
@@ -1308,7 +1337,7 @@ var Tut = (() => {
               }
 
               return ret;
-            }
+            };
           })(),
         };
 
@@ -1350,7 +1379,7 @@ var Tut = (() => {
   __fabRacc__ = (t, op) => {
     var regular = __fabAcc__(t, op);
 
-    return () => {
+    return function () {
       var nyArgs = [arguments[0]];
 
       nyArgs.concat(Array.from(arguments).slice(1).reverse());

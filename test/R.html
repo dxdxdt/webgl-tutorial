@@ -13,6 +13,9 @@
   <script type="application/javascript" src="../mod/tutils.js"></script>
 
   <script type="application/javascript">
+  (function () {
+    "use strict";
+
     describe("Tut.R", function () {
       describe("Set up", function () {
         it("Tut.R.Source.constructor called with one or more wrong parameter " +
@@ -224,7 +227,33 @@
           }).not.toThrow();
         }, 10000);
       });
+
+      describe("Stability", function () {
+        it("Repetitive use", function (done) {
+          var i = 0;
+          var lim = 5000;
+          var startAnew = function () {
+            let e = new Tut.R.Pack([new Tut.R.Source('id', "materials/example.json", Tut.R.TYPE.TEXT)]);
+            e.onResult = function (r) {
+              expect(r.result).toBe(true);
+            };
+            e.onDone = function () {
+              if (i < lim) {
+                expect(startAnew).not.toThrow();
+              }
+              else {
+                done();
+              }
+            };
+            e.fetch();
+            i += 1;
+          };
+
+          expect(startAnew).not.toThrow();
+        }, 10000);
+      });
     });
+  })();
   </script>
 
 </head>

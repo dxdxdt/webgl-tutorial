@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <script type="application/javascript" src="mod/gl-matrix.js"></script>
+  <script type="application/javascript" src="mod/tutils.js"></script>
+
+  <script type="application/x-glsl-shader" id="v_shader">
+    uniform mat4 u_mvp;
+
+    attribute vec3 a_pos;
+
+    void main () {
+      gl_Position = u_mvp * vec4(a_pos, 1.0);
+    }
+  </script>
+  <script type="application/x-glsl-shader" id="frag_shader">
+    precision mediump float;
+
+    void main () {
+      gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    }
+  </script>
+
+  <script type="application/javascript">
+  (function () {
+    "use strict";
+
+    window.addEventListener('load', function () {
+      let r;
+
+      r = new Tut.R.Pack([new Tut.R.Source('teapot', "assets/obj/teapot.obj", Tut.R.TYPE.TEXT)]);
+      r.onDone = function () {
+        let rp;
+
+        rp = this.bundle();
+        if (rp.teapot) {
+          fireGL(rp);
+        }
+      };
+      r.fetch();
+    });
+
+    function fireGL (rp) {
+      var watch = new Tut.PerfStopwatch();
+      var surface = document.getElementById("surface");
+      var gl = surface.getContext("webgl");
+      var vShader, fShader, progObj;
+      var progInfoLog;
+      var cameraTracker = document.getElementById("cameraTracker");
+      var camera = new Tut.Camera();
+      var inputOpt = {
+        mouse: {
+          factor: Math.deg2rad(0.05)
+        },
+        kbd: {
+          factor: 1 // 3 units per second
+        }
+      };
+      var model;
+
+      camera.position[0] = 0;
+      camera.position[1] = 2;
+      camera.position[2] = 5;
+      camera.onupdate = function () {
+        var pos = [
+          this.position[0].toFixed(2),
+          this.position[1].toFixed(2),
+          this.position[2].toFixed(2)];
+        var angle = [
+          Math.rad2deg(this.angle.h).toFixed(1),
+          Math.rad2deg(this.angle.v).toFixed(1)];
+
+        Tut.setTextNode(cameraTracker,
+          "pos(" + pos.join(", ") + "), face(" + angle.join(", ") + ")");
+      };
+
+      // Set up events.
+      (() => {
+        var pointerTracker = document.getElementById("pointerTracker");
+        var clickListener = () => {
+          surface.requestPointerLock();
+        };
+        var kdListener = (evt) => {
+
+          switch (evt.key) {
+          case 'w': camera.move(inputOpt.kbd.factor, 0); break;
+          case 's': camera.move(-inputOpt.kbd.factor, 0); break;
+          case 'd': camera.move(0, inputOpt.kbd.factor); break;
+          case 'a': camera.move(0, -inputOpt.kbd.factor); break;
+          }
+        };
+        var mmListener = (evt) => {
+          // Update camera status.
+          camera.addAngles(
+            inputOpt.mouse.factor * evt.movementX * -1,
+            inputOpt.mouse.factor * evt.movementY * -1);
+
+          Tut.setTextNode(pointerTracker, "x: " + evt.movementX + ", y: " + evt.movementY);
+        };
+
+        surface.addEventListener("click", clickListener, false);
+        document.addEventListener("pointerlockchange", () => {
+          if (document.pointerLockElement === surface) {
+            surface.removeEventListener("click", clickListener);
+            surface.addEventListener("mousemove", mmListener, false);
+          }
+          else {
+            surface.addEventListener("click", clickListener, false);
+            surface.removeEventListener("mousemove", mmListener);
+            Tut.setTextNode(pointerTracker);
+          }
+        }, false);
+        document.addEventListener("keydown", kdListener, false);
+      })();
+
+      // Environmental data printout
+      // Tut.printGLCap(gl);
+
+      model = Tut.OBJ.parse(rp.teapot);
+
+      watch.push(false);
+      vShader = Tut.loadShader(gl, document.getElementById("v_shader").text, gl.VERTEX_SHADER);
+      fShader = Tut.loadShader(gl, document.getElementById("frag_shader").text, gl.FRAGMENT_SHADER);
+      watch.push(true);
+
+      progObj = gl.createProgram();
+      gl.attachShader(progObj, vShader);
+      gl.attachShader(progObj, fShader);
+
+      gl.linkProgram(progObj);
+      watch.push(true);
+      progInfoLog = gl.getProgramInfoLog(progObj);
+
+      Tut.printLegit(progInfoLog);
+
+      if (!gl.getProgramParameter(progObj, gl.LINK_STATUS)) {
+        let e = new Tut.GLError(gl, "Failed to link program");
+        e.infoLog = progInfoLog;
+        Tut.throwFreezed(e);
+      }
+
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+      (function () {
+        var frameCounter = document.getElementById("frameCounter");
+        var framePerf = new Tut.FrameCounter();
+        var frameWatch = new Tut.PerfStopwatch();
+        var vab, eab;
+        var matProj, matView, matModel, matMVP;
+        var vecLookPoint;
+        var loc_matMVP;
+
+        watch.push(false);
+
+        matProj = mat4.create();
+        matView = mat4.create();
+        matModel = mat4.create();
+        matMVP = mat4.create();
+        vecLookPoint = vec3.create();
+
+        vab = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vab);
+        gl.bufferData(gl.ARRAY_BUFFER, model.array.vertices, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.bindAttribLocation(progObj, 0, "a_pos");
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+        eab = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, eab);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, model.indices, gl.STATIC_DRAW);
+
+        loc_matMVP = gl.getUniformLocation(progObj, "u_mvp");
+
+        gl.useProgram(progObj);
+
+        watch.push(true);
+
+        var draw = function () {
+          frameWatch.reset().push();
+
+          gl.viewport(0, 0, surface.width, surface.height);
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.COLOR_DEPTH_BUFFER_BIT);
+
+          mat4.perspective(matProj, camera.fov, surface.width / surface.height, 0.1, 100.0);
+          // mat4.ortho(matProj, -10, 10, -10, 10, 0, 100);
+          vec3.add(vecLookPoint, camera.position, camera.direction);
+          mat4.lookAt(matView, camera.position, vecLookPoint, camera.up);
+          mat4.identity(matModel);
+          mat4.amul(matMVP, matProj, matView, matModel);
+
+          gl.useProgram(progObj);
+          gl.enable(gl.DEPTH_TEST);
+          gl.depthFunc(gl.LESS);
+          gl.enable(gl.CULL_FACE);
+
+          gl.uniformMatrix4fv(loc_matMVP, false, matMVP);
+
+          gl.drawElements(gl.TRIANGLES, model.indices.length, gl.UNSIGNED_SHORT, 0);
+
+          gl.flush();
+
+          frameWatch.push();
+          framePerf.push(frameWatch.ts[1] - frameWatch.ts[0]);
+          requestAnimationFrame(draw);
+        };
+
+        requestAnimationFrame(draw);
+
+        setInterval(function () {
+          var str;
+
+          if (framePerf.calc().cnt) {
+            str = framePerf.cnt +
+              " (sum: " + framePerf.sum.toFixed(4) +
+              ", mean: " + framePerf.mean.toFixed(4) +
+              ", min: " + framePerf.min.toFixed(4) +
+              ", max: " + framePerf.max.toFixed(4) +
+              ", stdev: " + framePerf.stdev.toFixed(4) + ")";
+          }
+          else {
+            str = "0";
+          }
+
+          Tut.setTextNode(frameCounter, str);
+        }, 1000);
+      })();
+    }
+  })();
+  </script>
+</head>
+<body>
+  <p>
+    <div><span>Facing: </span><span id="cameraTracker"></span></div>
+    <div><span>Movement: </span><span id="pointerTracker"></span></div>
+  </p>
+  <p>
+    <canvas id="surface" width="800" height="600"></canvas>
+  </p>
+  <p>
+    <div id="frameCounter"></div>
+  </p>
+</body>
+</html>
