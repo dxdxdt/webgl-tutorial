@@ -5,65 +5,30 @@
   <script type="application/javascript" src="mod/gl-matrix.js"></script>
   <script type="application/javascript" src="mod/tutils.js"></script>
 
-  <script type="application/x-glsl-shader" id="v_shader">
-    uniform mat4 u_mvp;
-
-    attribute vec3 a_pos;
-    attribute vec2 a_uv;
-
-    varying vec2 v_uv;
-
-    void main () {
-      gl_Position = u_mvp * vec4(a_pos, 1.0);
-      v_uv = a_uv;
-    }
-  </script>
-  <script type="application/x-glsl-shader" id="frag_shader">
-    precision mediump float;
-
-    uniform sampler2D u_sample;
-
-    varying vec2 v_uv;
-
-    void main () {
-      gl_FragColor = texture2D(u_sample, v_uv);
-    }
-  </script>
-
   <script type="application/javascript">
+  (function () {
     "use strict";
 
-    function boot () {
-      var fired = false;
-      var rp = { // Resource pack
-        tp: [], // Texture pack
-        tp_cnt: 0
-      };
-      var img;
-      var fireIfReady = function () {
-        if (fired) {
-          return;
-        }
-        if (rp.tp.length > rp.tp_cnt) {
-          return;
-        }
+    window.addEventListener('load', function () {
+      let r;
 
-        fireGL(rp);
-        fired = true;
-      };
-      var onImageLoad = function () {
-        for (let v of rp.tp) {
-          rp.tp_cnt += 1;
-          fireIfReady();
+      r = new Tut.R.Pack([
+        new Tut.R.Source('shader.vert', "assets/t8/shader.vert", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('shader.frag', "assets/t8/shader.frag", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('model.suzanne.obj', "assets/t8/suzanne.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('model.suzanne.png', "assets/t8/suzanne.png", Tut.R.TYPE.IMAGE)
+      ]);
+      r.onResult = function (r) {
+        if (!r.result) {
+          // Prevent fireGL() call.
+          this.onDone = null;
         }
       };
-
-      // Load necessary resources.
-      img = new Image();
-      img.onload = onImageLoad;
-      rp.tp.push(img);
-      img.src = "assets/t5/cube.png";
-    }
+      r.onDone = function () {
+        fireGL(this.bundle());
+      };
+      r.fetch();
+    });
 
     function fireGL (rp) {
       var watch = new Tut.PerfStopwatch();
@@ -73,6 +38,8 @@
       var progInfoLog;
       var cameraTracker = document.getElementById("cameraTracker");
       var camera = new Tut.Camera();
+      var lockLight = document.getElementById("lockLight");
+      var vecLightPos = vec3.fromValues(4, 4, 4);
       var inputOpt = {
         mouse: {
           factor: Math.deg2rad(0.05)
@@ -82,6 +49,23 @@
         }
       };
       var inputRate = [0, 0]; // Forward, right.
+
+      watch.push(false);
+
+      // Prep resources.
+      {
+        let i;
+
+        rp.model.suzanne.geo = Tut.OBJ.parse(rp.model.suzanne.obj);
+        // Can't go on without Suzanne's normals.
+        if (!rp.model.suzanne.geo.array.normals.length) {
+          Tut.throwFreezed(new Error("normals required from Suzanne's model."));
+        }
+        // Invert the coordinates to use DDS texture.
+        for (i = 1; i < rp.model.suzanne.geo.array.uvs.length; i += 2) {
+          rp.model.suzanne.geo.array.uvs[i] = 1 - rp.model.suzanne.geo.array.uvs[i];
+        }
+      }
 
       camera.onupdate = function () {
         var pos = [
@@ -93,7 +77,7 @@
           Math.rad2deg(this.angle.v).toFixed(1)];
 
         Tut.setTextNode(cameraTracker,
-          "pos(" + pos.join(", ") + "), face(" + angle.join(", ") + ")");
+          "pos(" + pos.join(", ") + "), face(" + angle.join(", ") + "), light(" + vecLightPos.join(", ") + ")");
       };
 
       // Set up events.
@@ -143,12 +127,9 @@
         document.addEventListener("keyup", kuListener, false);
       })();
 
-      // Environmental data printout
-      // Tut.printGLCap(gl);
+      vShader = Tut.loadShader(gl, rp.shader.vert, gl.VERTEX_SHADER);
+      fShader = Tut.loadShader(gl, rp.shader.frag, gl.FRAGMENT_SHADER);
 
-      watch.push(false);
-      vShader = Tut.loadShader(gl, document.getElementById("v_shader").text, gl.VERTEX_SHADER);
-      fShader = Tut.loadShader(gl, document.getElementById("frag_shader").text, gl.FRAGMENT_SHADER);
       watch.push(true);
 
       progObj = gl.createProgram();
@@ -173,86 +154,10 @@
         var frameCounter = document.getElementById("frameCounter");
         var framePerf = new Tut.FrameCounter();
         var frameWatch = new Tut.PerfStopwatch();
-        var vertices = new Float32Array([
-          -1.0,-1.0,-1.0, // triangle 1 : begin
-          -1.0,-1.0, 1.0,
-          -1.0, 1.0, 1.0, // triangle 1 : end
-          1.0, 1.0,-1.0, // triangle 2 : begin
-          -1.0,-1.0,-1.0,
-          -1.0, 1.0,-1.0, // triangle 2 : end
-          1.0,-1.0, 1.0,
-          -1.0,-1.0,-1.0,
-          1.0,-1.0,-1.0,
-          1.0, 1.0,-1.0,
-          1.0,-1.0,-1.0,
-          -1.0,-1.0,-1.0,
-          -1.0,-1.0,-1.0,
-          -1.0, 1.0, 1.0,
-          -1.0, 1.0,-1.0,
-          1.0,-1.0, 1.0,
-          -1.0,-1.0, 1.0,
-          -1.0,-1.0,-1.0,
-          -1.0, 1.0, 1.0,
-          -1.0,-1.0, 1.0,
-          1.0,-1.0, 1.0,
-          1.0, 1.0, 1.0,
-          1.0,-1.0,-1.0,
-          1.0, 1.0,-1.0,
-          1.0,-1.0,-1.0,
-          1.0, 1.0, 1.0,
-          1.0,-1.0, 1.0,
-          1.0, 1.0, 1.0,
-          1.0, 1.0,-1.0,
-          -1.0, 1.0,-1.0,
-          1.0, 1.0, 1.0,
-          -1.0, 1.0,-1.0,
-          -1.0, 1.0, 1.0,
-          1.0, 1.0, 1.0,
-          -1.0, 1.0, 1.0,
-          1.0,-1.0, 1.0
-        ]);
-        var uvs = new Float32Array([
-          0.000059, 0.000004,
-          0.000103, 0.336048,
-          0.335973, 0.335903,
-          1.000023, 0.000013,
-          0.667979, 0.335851,
-          0.999958, 0.336064,
-          0.667979, 0.335851,
-          0.336024, 0.671877,
-          0.667969, 0.671889,
-          1.000023, 0.000013,
-          0.668104, 0.000013,
-          0.667979, 0.335851,
-          0.000059, 0.000004,
-          0.335973, 0.335903,
-          0.336098, 0.000071,
-          0.667979, 0.335851,
-          0.335973, 0.335903,
-          0.336024, 0.671877,
-          1.000004, 0.671847,
-          0.999958, 0.336064,
-          0.667979, 0.335851,
-          0.668104, 0.000013,
-          0.335973, 0.335903,
-          0.667979, 0.335851,
-          0.335973, 0.335903,
-          0.668104, 0.000013,
-          0.336098, 0.000071,
-          0.000103, 0.336048,
-          0.000004, 0.671870,
-          0.336024, 0.671877,
-          0.000103, 0.336048,
-          0.336024, 0.671877,
-          0.335973, 0.335903,
-          0.667969, 0.671889,
-          1.000004, 0.671847,
-          0.667979, 0.335851
-        ]);
-        var vab, uvab, tex;
+        var vab, uvab, nab, eab, tex;
         var matProj, matView, matModel, matMVP;
         var vecLookPoint;
-        var loc_matMVP, loc_tex;
+        var unif;
 
         watch.push(false);
 
@@ -264,61 +169,95 @@
 
         vab = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, vab);
-        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-        gl.enableVertexAttribArray(0);
-        gl.bindAttribLocation(progObj, 0, "a_pos");
-        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.suzanne.geo.array.vertices, gl.STATIC_DRAW);
 
         uvab = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, uvab);
-        gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
-        gl.enableVertexAttribArray(1);
-        gl.bindAttribLocation(progObj, 1, "a_uv");
-        gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.suzanne.geo.array.uvs, gl.STATIC_DRAW);
+
+        nab = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, nab);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.suzanne.geo.array.normals, gl.STATIC_DRAW);
+
+        eab = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, eab);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, rp.model.suzanne.geo.indices, gl.STATIC_DRAW);
 
         tex = gl.createTexture();
-        gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rp.tp[0]);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rp.model.suzanne.png);
         gl.generateMipmap(gl.TEXTURE_2D);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
 
-        loc_matMVP = gl.getUniformLocation(progObj, "u_mvp");
-        loc_tex = gl.getUniformLocation(progObj, "u_sample");
-
-        gl.useProgram(progObj);
-        gl.uniform1i(loc_tex, 0);
+        unif = {};
+        unif.mvp = gl.getUniformLocation(progObj, "u_mvp");
+        unif.view = gl.getUniformLocation(progObj, "u_view");
+        unif.model = gl.getUniformLocation(progObj, "u_model");
+        unif.lightPos = gl.getUniformLocation(progObj, "u_wsLightPos");
+        unif.tex = gl.getUniformLocation(progObj, "u_tex");
 
         watch.push(true);
 
         var draw = function () {
           frameWatch.reset().push();
 
-          gl.viewport(0, 0, surface.width, surface.height);
-          gl.clear(gl.COLOR_BUFFER_BIT | gl.COLOR_DEPTH_BUFFER_BIT);
+          // CPU intensive work before GL calls.
 
           // Reflect user input.
           // XXX: Probably not a good idea on slow machines.
           camera.move(inputRate[0], inputRate[1]);
+          // Move the light pos too.
+          if (lockLight.checked) {
+            vec3.copy(vecLightPos, camera.position);
+          }
 
           mat4.perspective(matProj, camera.fov, surface.width / surface.height, 0.1, 100.0);
-          // mat4.ortho(matProj, -10, 10, -10, 10, 0, 100);
           vec3.add(vecLookPoint, camera.position, camera.direction);
           mat4.lookAt(matView, camera.position, vecLookPoint, camera.up);
           mat4.identity(matModel);
           mat4.amul(matMVP, matProj, matView, matModel);
 
+          // GL calls.
+          gl.viewport(0, 0, surface.width, surface.height);
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.COLOR_DEPTH_BUFFER_BIT);
+
+          // Suzanne
           gl.useProgram(progObj);
           gl.enable(gl.DEPTH_TEST);
           gl.enable(gl.CULL_FACE);
           gl.depthFunc(gl.LESS);
 
-          gl.uniformMatrix4fv(loc_matMVP, false, matMVP);
+          gl.uniformMatrix4fv(unif.mvp, false, matMVP);
+          gl.uniformMatrix4fv(unif.view, false, matView);
+          gl.uniformMatrix4fv(unif.model, false, matModel);
+          gl.uniform3fv(unif.lightPos, vecLightPos);
+          gl.uniform1i(unif.tex, 0);
+
+          gl.enableVertexAttribArray(0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, vab);
+          gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+          gl.bindAttribLocation(progObj, 0, 'a_msPos');
+
+          gl.enableVertexAttribArray(1);
+          gl.bindBuffer(gl.ARRAY_BUFFER, uvab);
+          gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+          gl.bindAttribLocation(progObj, 1, 'a_uv');
+
+          gl.enableVertexAttribArray(2);
+          gl.bindBuffer(gl.ARRAY_BUFFER, nab);
+          gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
+          gl.bindAttribLocation(progObj, 2, 'a_msNormal');
+
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, tex);
 
-          gl.drawArrays(gl.TRIANGLES, 0, 12*3);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, eab);
+          gl.drawElements(gl.TRIANGLES, rp.model.suzanne.geo.indices.length, gl.UNSIGNED_SHORT, 0);
+
+          gl.disableVertexAttribArray(0);
+          gl.disableVertexAttribArray(1);
+          gl.disableVertexAttribArray(2);
 
           gl.flush();
 
@@ -347,16 +286,22 @@
           Tut.setTextNode(frameCounter, str);
         }, 1000);
       })();
-    }
+    }})();
   </script>
 </head>
-<body onload="boot()">
+<body>
   <p>
     <div><span>Facing: </span><span id="cameraTracker"></span></div>
     <div><span>Movement: </span><span id="pointerTracker"></span></div>
   </p>
   <p>
     <canvas id="surface" width="800" height="600"></canvas>
+  </p>
+  <p>
+    <input id="lockLight" type="checkbox"/>
+    <span>
+      Light pos follows camera pos.
+    </span>
   </p>
   <p>
     <div id="frameCounter"></div>
