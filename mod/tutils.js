@@ -5,7 +5,7 @@ var Tut = (() => {
   var __ret__; // Scope object.
   const __RAD2DEG__ = Math.PI / 180;
   var __fabAcc__, __fabRacc__;
-  var __checkType__, __checkIfFunc__, __checkClass__;
+  var __checkType__, __checkFunc__, __checkClass__;
 
   __checkType__ = function (x, t) {
     var typeName = typeof x;
@@ -20,11 +20,35 @@ var Tut = (() => {
     }
   };
   __checkClass__ = function (x, c) {
-    if (!(x instanceof c)) {
-      Tut.throwFreezed(new TypeError("instance of " + (c.name || c) + "required."));
+    if (Array.isArray(c)) {
+      let e, names, str;
+
+      for (e of c) {
+        if (x instanceof e) {
+          return;
+        }
+      }
+
+      names = [];
+      for (e of c) {
+        names.push(e.name || e);
+      }
+      if (names.length <= 1) {
+        str = names.join("");
+      }
+      else {
+        str = names.slice(0, names.length - 1).join(", ") + names[names.length - 1];
+      }
+
+      Tut.throwFreezed(new TypeError("instance of [" + str + "] required."));
+    }
+    else {
+      if (!(x instanceof c)) {
+        Tut.throwFreezed(new TypeError("instance of " + (c.name || c) + " required."));
+      }
     }
   };
-  __checkIfFunc__ = function (x) {
+  __checkFunc__ = function (x) {
     if (!(x instanceof Function)) {
       Tut.throwFreezed(new TypeError("function/callable required."));
     }
@@ -803,7 +827,7 @@ var Tut = (() => {
                   },
                   set: function (x) {
                     if (x) {
-                      __checkIfFunc__(x);
+                      __checkFunc__(x);
                       __onDone = x.bind(this);
                     }
                     else {
@@ -828,7 +852,7 @@ var Tut = (() => {
                   },
                   set: function (x) {
                     if (x) {
-                      __checkIfFunc__(x);
+                      __checkFunc__(x);
                       __onResult = x.bind(this);
                     }
                     else {
@@ -1069,6 +1093,18 @@ var Tut = (() => {
       console.info(arr.join("\n"));
 
       console.info(gl.getSupportedExtensions().join("\n"));
+    },
+
+    checkClass: function () {
+      return __checkClass__.apply(this, arguments);
+    },
+
+    checkType: function () {
+      return __checkType__.apply(this, arguments);
+    },
+
+    checkFunc: function () {
+      return __checkFunc__.apply(this, arguments);
     },
 
     // Simple Wavefront OBJ file parser

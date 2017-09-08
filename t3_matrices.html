@@ -189,6 +189,7 @@
     progObj = gl.createProgram();
     gl.attachShader(progObj, vShader);
     gl.attachShader(progObj, fShader);
+    gl.bindAttribLocation(progObj, 0, "v_pos");
 
     gl.linkProgram(progObj);
     watch.push(true);
@@ -244,7 +245,6 @@
       gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
       gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
       gl.enableVertexAttribArray(0);
-      gl.bindAttribLocation(progObj, 0, "v_pos");
 
       ibo = gl.createBuffer();
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);

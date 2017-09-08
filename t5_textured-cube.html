@@ -243,6 +243,8 @@
     progObj = gl.createProgram();
     gl.attachShader(progObj, vShader);
     gl.attachShader(progObj, fShader);
+    gl.bindAttribLocation(progObj, 0, "a_pos");
+    gl.bindAttribLocation(progObj, 1, "a_uv");
 
     gl.linkProgram(progObj);
     watch.push(true);
@@ -355,14 +357,12 @@
       gl.bindBuffer(gl.ARRAY_BUFFER, vab);
       gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(0);
-      gl.bindAttribLocation(progObj, 0, "a_pos");
       gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
 
       uvab = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, uvab);
       gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(1);
-      gl.bindAttribLocation(progObj, 1, "a_uv");
       gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
 
       tex = gl.createTexture();

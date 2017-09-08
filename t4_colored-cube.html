@@ -214,6 +214,8 @@
     progObj = gl.createProgram();
     gl.attachShader(progObj, vShader);
     gl.attachShader(progObj, fShader);
+    gl.bindAttribLocation(progObj, 0, "a_pos");
+    gl.bindAttribLocation(progObj, 1, "a_colour");
 
     gl.linkProgram(progObj);
     watch.push(true);
@@ -326,14 +328,12 @@
       gl.bindBuffer(gl.ARRAY_BUFFER, vab);
       gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(0);
-      gl.bindAttribLocation(progObj, 0, "a_pos");
       gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
 
       cab = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, cab);
       gl.bufferData(gl.ARRAY_BUFFER, colours, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(1);
-      gl.bindAttribLocation(progObj, 1, "a_colour");
       gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
 
       loc_matMVP = gl.getUniformLocation(progObj, "u_mvp");
