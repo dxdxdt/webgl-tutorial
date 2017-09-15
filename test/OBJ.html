@@ -101,12 +101,27 @@
               case 'legit-example':
               case 'legit-mixed_space':
                 expect(data.array.vertices.length).toBe(8 * 3);
+                expect(data.indices.length).toBe(12 * 3);
                 checkBounds(data);
+                // Want nothing but vertices.
+                data = Tut.OBJ.parse(rp[id], null, {
+                  loadList: {
+                    uvs: false,
+                    normals: false
+                    // tangents: false // Implied.
+                  }
+                });
+                expect(data.array.uvs).toBe(null);
+                expect(data.array.normals).toBe(null);
+                expect(data.array.tangents).toBe(null);
+                expect(data.array.bitangents).toBe(null);
+                expect(data.indices.length).toBe(12 * 3);
                 break;
               case 'legit-teapot':
                 expect(data.array.vertices.length).toBe(3644 * 3);
                 expect(data.array.uvs.length).toBe(0);
                 expect(data.array.normals.length).toBe(0);
+                expect(data.indices.length).toBe(6320 * 3);
                 checkBounds(data);
                 break;
               }

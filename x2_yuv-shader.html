@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <script type="application/javascript" src="mod/gl-matrix.js"></script>
   <script type="application/javascript" src="mod/tutils.js"></script>
-  <script type="application/javascript" src="assets/t11/tutils.text2d.js"></script>
 
   <script type="application/javascript">
   (function () {
@@ -14,14 +13,10 @@
       let r;
 
       r = new Tut.R.Pack([
-        new Tut.R.Source('shader.vert', "assets/t11/shader.vert", Tut.R.TYPE.TEXT),
-        new Tut.R.Source('shader.frag', "assets/t11/shader.frag", Tut.R.TYPE.TEXT),
-        new Tut.R.Source('model.suzanne.obj', "assets/models/suzanne/suzanne.obj", Tut.R.TYPE.TEXT),
-        new Tut.R.Source('model.suzanne.png', "assets/models/suzanne/suzanne.png", Tut.R.TYPE.IMAGE),
-
-        new Tut.R.Source('text2d.texture', "assets/t11/Holstein.png", Tut.R.TYPE.IMAGE),
-        new Tut.R.Source('text2d.shader.vert', "assets/t11/text2d.vert", Tut.R.TYPE.TEXT),
-        new Tut.R.Source('text2d.shader.frag', "assets/t11/text2d.frag", Tut.R.TYPE.TEXT)
+        new Tut.R.Source('shader.yuv.vert', "assets/x2/shader.yuv.p.vert", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('shader.yuv.frag', "assets/x2/shader.yuv.p.frag", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('yuv.data', "assets/x2/color-test.yuv", Tut.R.TYPE.ARRAYBUFFER),
+        new Tut.R.Source('yuv.meta', "assets/x2/color-test.json", Tut.R.TYPE.JSON)
       ]);
       r.onResult = function (r) {
         if (!r.result) {
@@ -39,12 +34,10 @@
       var watch = new Tut.PerfStopwatch();
       var surface = document.getElementById("surface");
       var gl = surface.getContext("webgl");
-      var vShader, fShader, progObj;
+      var prog = {};
       var progInfoLog;
       var cameraTracker = document.getElementById("cameraTracker");
       var camera = new Tut.Camera();
-      var lockLight = document.getElementById("lockLight");
-      var vecLightPos = vec3.fromValues(4, 4, 4);
       var inputOpt = {
         mouse: {
           factor: Math.deg2rad(0.05)
@@ -54,33 +47,11 @@
         }
       };
       var inputRate = [0, 0]; // Forward, right.
-      var textProg;
 
       watch.push(false);
 
-      // Prep resources.
-      {
-        let i;
-
-        rp.model.suzanne.geo = Tut.OBJ.parse(rp.model.suzanne.obj);
-        // Can't go on without Suzanne's normals.
-        if (!rp.model.suzanne.geo.array.normals.length) {
-          Tut.throwFreezed(new Error("normals required from Suzanne's model."));
-        }
-        // Invert the coordinates to use DDS texture.
-        for (i = 1; i < rp.model.suzanne.geo.array.uvs.length; i += 2) {
-          rp.model.suzanne.geo.array.uvs[i] = 1 - rp.model.suzanne.geo.array.uvs[i];
-        }
-
-        Tut.initText2D({
-          texture: rp.text2d.texture,
-          shader: {
-            vert: rp.text2d.shader.vert,
-            frag: rp.text2d.shader.frag
-          }
-        });
-        textProg = new Tut.Text2D(gl);
-      }
+      [camera.position[0], camera.position[1], camera.position[2]] = [0, 0, -2];
+      camera.setAngles(0, 0);
 
       camera.onupdate = function () {
         var pos = [
@@ -90,13 +61,9 @@
         var angle = [
           Math.rad2deg(this.angle.h).toFixed(1),
           Math.rad2deg(this.angle.v).toFixed(1)];
-        var lightPos = [
-          vecLightPos[0].toFixed(2),
-          vecLightPos[1].toFixed(2),
-          vecLightPos[2].toFixed(2)];
 
         Tut.setTextNode(cameraTracker,
-          "pos(" + pos.join(", ") + "), face(" + angle.join(", ") + "), light(" + lightPos.join(", ") + ")");
+          "pos(" + pos.join(", ") + "), face(" + angle.join(", ") + ")");
       };
 
       // Set up events.
@@ -146,41 +113,57 @@
         document.addEventListener("keyup", kuListener, false);
       })();
 
-      vShader = Tut.loadShader(gl, rp.shader.vert, gl.VERTEX_SHADER);
-      fShader = Tut.loadShader(gl, rp.shader.frag, gl.FRAGMENT_SHADER);
-
       watch.push(true);
 
-      progObj = gl.createProgram();
-      gl.attachShader(progObj, vShader);
-      gl.attachShader(progObj, fShader);
-      gl.bindAttribLocation(progObj, 0, 'a_msPos');
-      gl.bindAttribLocation(progObj, 1, 'a_uv');
-      gl.bindAttribLocation(progObj, 2, 'a_msNormal');
+      prog.yuv = Tut.setupShader(gl, {
+        vert: rp.shader.yuv.vert,
+        frag: rp.shader.yuv.frag,
+        attrMap: {
+          'a_pos': 0,
+          'a_uv': 1
+        },
+        unif: [
+          'u_mvp',
+          'u_texY',
+          'u_texU',
+          'u_texV',
+          'u_diffuse'
+        ]
+      });
 
-      gl.linkProgram(progObj);
       watch.push(true);
-      progInfoLog = gl.getProgramInfoLog(progObj);
-
-      Tut.printLegit(progInfoLog);
-
-      if (!gl.getProgramParameter(progObj, gl.LINK_STATUS)) {
-        let e = new Tut.GLError(gl, "Failed to link program");
-        e.infoLog = progInfoLog;
-        Tut.throwFreezed(e);
-      }
-
-      gl.clearColor(0.0, 0.0, 0.0, 1.0);
 
       (function () {
         var frameCounter = document.getElementById("frameCounter");
         var framePerf = new Tut.FrameCounter();
         var frameWatch = new Tut.PerfStopwatch();
-        var vab, uvab, nab, eab, tex;
+        var buf, bufDebug, tex;
         var matProj, matView, matModel, matMVP;
         var vecLookPoint;
-        var unif;
-        var textArr = [];
+        const pictureSize = {
+          luma: rp.yuv.meta.width * rp.yuv.meta.height,
+          chroma: rp.yuv.meta.width * rp.yuv.meta.height / 4
+        };
+        const aspectRatio = rp.yuv.meta.width / rp.yuv.meta.height;
+        var picture = {
+          y: new Uint8Array(rp.yuv.data, 0, pictureSize.luma),
+          u: new Uint8Array(rp.yuv.data, pictureSize.luma, pictureSize.chroma),
+          v: new Uint8Array(rp.yuv.data, pictureSize.luma + pictureSize.chroma, pictureSize.chroma)
+        };
+        var diffuse = new Float32Array([1.0, 1.0, 1.0, 1.0]);
+        var obj = {
+          vertices: new Float32Array([
+            -aspectRatio, 1.0, 0.0,
+            aspectRatio, 1.0, 0.0,
+            aspectRatio, -1.0, 0.0,
+            -aspectRatio, -1.0, 0.0]),
+          uvs: new Float32Array([
+            1.0, 0.0,
+            0.0, 0.0,
+            0.0, 1.0,
+            1.0, 1.0]),
+          indices: new Uint16Array([3, 2, 0, 1, 3])
+        };
 
         watch.push(false);
 
@@ -190,49 +173,25 @@
         matMVP = mat4.create();
         vecLookPoint = vec3.create();
 
-        textArr.push(new Tut.Text2D.Text(10, 500, 60));
-        textArr.push(new Tut.Text2D.Text(0, 0, 30, (function () {
-          let i;
-          let ret = [];
-          const a = ('A').charCodeAt(0);
-          const lim = a + 27;
+        buf = {
+          vertices: gl.createBuffer(),
+          uvs: gl.createBuffer(),
+          indices: gl.createBuffer()
+        };
+        tex = {
+          y: gl.createTexture(),
+          u: gl.createTexture(),
+          v: gl.createTexture()
+        };
 
-          for (i = a; i < lim; i += 1) {
-            ret.push(String.fromCharCode(i));
-          }
+        gl.clearColor(0.0, 0.0, 0.2, 1.0);
 
-          return ret.join('');
-        })(), [169/255, 223/255, 191/255]));
-
-        vab = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, vab);
-        gl.bufferData(gl.ARRAY_BUFFER, rp.model.suzanne.geo.array.vertices, gl.STATIC_DRAW);
-
-        uvab = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, uvab);
-        gl.bufferData(gl.ARRAY_BUFFER, rp.model.suzanne.geo.array.uvs, gl.STATIC_DRAW);
-
-        nab = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, nab);
-        gl.bufferData(gl.ARRAY_BUFFER, rp.model.suzanne.geo.array.normals, gl.STATIC_DRAW);
-
-        eab = gl.createBuffer();
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, eab);
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, rp.model.suzanne.geo.indices, gl.STATIC_DRAW);
-
-        tex = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rp.model.suzanne.png);
-        gl.generateMipmap(gl.TEXTURE_2D);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-
-        unif = {};
-        unif.mvp = gl.getUniformLocation(progObj, "u_mvp");
-        unif.view = gl.getUniformLocation(progObj, "u_view");
-        unif.model = gl.getUniformLocation(progObj, "u_model");
-        unif.lightPos = gl.getUniformLocation(progObj, "u_wsLightPos");
-        unif.tex = gl.getUniformLocation(progObj, "u_tex");
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.vertices);
+        gl.bufferData(gl.ARRAY_BUFFER, obj.vertices, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.uvs);
+        gl.bufferData(gl.ARRAY_BUFFER, obj.uvs, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.indices);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, obj.indices, gl.STATIC_DRAW);
 
         watch.push(true);
 
@@ -255,48 +214,61 @@
           mat4.identity(matModel);
           mat4.amul(matMVP, matProj, matView, matModel);
 
-          textArr[0].str = (frameWatch.ts[0] / 1000).toFixed(2) + "sec";
-
           // GL calls.
           gl.viewport(0, 0, surface.width, surface.height);
           gl.clear(gl.COLOR_BUFFER_BIT | gl.COLOR_DEPTH_BUFFER_BIT);
 
-          // Suzanne
-          gl.useProgram(progObj);
+          // The picture
+          gl.useProgram(prog.yuv.prog);
           gl.enable(gl.DEPTH_TEST);
-          gl.enable(gl.CULL_FACE);
 
-          gl.uniformMatrix4fv(unif.mvp, false, matMVP);
-          gl.uniformMatrix4fv(unif.view, false, matView);
-          gl.uniformMatrix4fv(unif.model, false, matModel);
-          gl.uniform3fv(unif.lightPos, vecLightPos);
-          gl.uniform1i(unif.tex, 0);
+          gl.uniformMatrix4fv(prog.yuv.unif.u_mvp, false, matMVP);
+          gl.uniform4fv(prog.yuv.unif.u_diffuse, diffuse);
+          gl.uniform1i(prog.yuv.unif.u_texY, 0);
+          gl.uniform1i(prog.yuv.unif.u_texU, 1);
+          gl.uniform1i(prog.yuv.unif.u_texV, 2);
+
+          gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, tex.y);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, rp.yuv.meta.width, rp.yuv.meta.height, 0, gl.ALPHA, gl.UNSIGNED_BYTE, picture.y);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, tex.u);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, rp.yuv.meta.width / 2, rp.yuv.meta.height / 2, 0, gl.ALPHA, gl.UNSIGNED_BYTE, picture.u);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, tex.v);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, rp.yuv.meta.width / 2, rp.yuv.meta.height / 2, 0, gl.ALPHA, gl.UNSIGNED_BYTE, picture.v);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+          gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
 
           gl.enableVertexAttribArray(0);
           gl.enableVertexAttribArray(1);
-          gl.enableVertexAttribArray(2);
-          gl.bindBuffer(gl.ARRAY_BUFFER, vab);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.vertices);
           gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-          gl.bindBuffer(gl.ARRAY_BUFFER, uvab);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.uvs);
           gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
-          gl.bindBuffer(gl.ARRAY_BUFFER, nab);
-          gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
 
-          gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, tex);
-
-          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, eab);
-          gl.drawElements(gl.TRIANGLES, rp.model.suzanne.geo.indices.length, gl.UNSIGNED_SHORT, 0);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.indices);
+          gl.drawElements(gl.TRIANGLE_STRIP, obj.indices.length, gl.UNSIGNED_SHORT, 0);
 
           gl.disable(gl.DEPTH_TEST);
-          gl.disable(gl.CULL_FACE);
 
           gl.disableVertexAttribArray(0);
           gl.disableVertexAttribArray(1);
-          gl.disableVertexAttribArray(2);
 
-          // The text.
-          textProg.render(textArr);
 
           gl.flush();
 

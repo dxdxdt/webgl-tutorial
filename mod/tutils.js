@@ -953,6 +953,15 @@ var Tut = (() => {
         });
       }
     },
+
+    AssertionError: class extends Error {},
+
+    assert: function (cond, msg) {
+      if (!cond) {
+        Tut.throwFreezed(new Tut.AssertionError(msg));
+      }
+    },
+
     // Freeze the passed object and throw it.
     throwFreezed: (x) => {
       throw Object.freeze(x);
@@ -1013,7 +1022,7 @@ var Tut = (() => {
     // 'type': the type of the shader program. Must be one of gl.VERTEX_SHADER
     // or gl.FRAGMENT_SHADER.
     loadShader: (gl, src, type) => {
-      var shader, shaderInfo;
+      let shader, shaderInfo;
 
       shader = gl.createShader(type);
       if (!shader) {
@@ -1028,7 +1037,18 @@ var Tut = (() => {
       Tut.printLegit(shaderInfo);
 
       if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        let e = new Tut.GLError(gl, "Failed to compile shader.");
+        const msg = [
+          "Failed to compile ",
+          (function () {
+            switch (type) {
+            case gl.FRAGMENT_SHADER: return 'fragment';
+            case gl.VERTEX_SHADER: return 'vertex';
+            }
+            return '?';
+          })(),
+          " shader."
+        ];
+        let e = new Tut.GLError(gl, msg.join(''));
         e.infoLog = shaderInfo;
 
         gl.deleteShader(shader);
@@ -1037,6 +1057,39 @@ var Tut = (() => {
       }
 
       return shader;
+    },
+    setupShader: function (gl, b) {
+      let ret = {
+        prog: gl.createProgram(),
+        vert: Tut.loadShader(gl, b.vert, gl.VERTEX_SHADER),
+        frag: Tut.loadShader(gl, b.frag, gl.FRAGMENT_SHADER),
+        attrMap: b.attrMap,
+        unif: {}
+      };
+      let i;
+      let progInfoLog;
+
+      gl.attachShader(ret.prog, ret.vert);
+      gl.attachShader(ret.prog, ret.frag);
+
+      for (i in b.attrMap) {
+        gl.bindAttribLocation(ret.prog, b.attrMap[i], i);
+      }
+
+      gl.linkProgram(ret.prog);
+      progInfoLog = gl.getProgramInfoLog(ret.prog);
+      Tut.printLegit(progInfoLog);
+      if (!gl.getProgramParameter(ret.prog, gl.LINK_STATUS)) {
+        let e = new Tut.GLError(gl, "Failed to link program");
+        e.infoLog = progInfoLog;
+        Tut.throwFreezed(e);
+      }
+
+      for (i of b.unif) {
+        ret.unif[i] = gl.getUniformLocation(ret.prog, i);
+      }
+
+      return ret;
     },
     // Prints the capability of the WebGL rendering context to the console.
     // For debugging purpose.
@@ -1159,10 +1212,12 @@ var Tut = (() => {
           // a different parsing result. Below is an example option:
           // {
           //   loadList: {
-          //     // Whether to include UV coordinates in the return value.
+          //     // Whether to parse and return UV coordinates.
           //     'uvs': true,
-          //     // Whether to include normal vectors in the return value.
-          //     'normals': true
+          //     // Whether to parse and return normal vectors.
+          //     'normals': true,
+          //     // Whether to calculate and return tangents and bitangents from uvs and normals.
+          //     'tangents': true
           //   }
           // }
           // Return value:
@@ -1171,6 +1226,8 @@ var Tut = (() => {
           //     vertices: Float32Array,
           //     uvs: Float32Array or null,
           //     normals: Float32Array or null
+          //     tangents: Float32Array or null
+          //     bitangents: Float32Array or null
           //   },
           //   indices: Uint16Array // glDrawElement() parameter.
           // }
@@ -1214,8 +1271,9 @@ var Tut = (() => {
 
               opt = opt || {
                 loadList: {
-                  'uvs': true,
-                  'normals': true
+                  uvs: true,
+                  normals: true,
+                  tangents: true
                 }
               };
               vertices = [];
@@ -1342,16 +1400,26 @@ var Tut = (() => {
                   checkBounds('Vertex', normals.length / 3, mapMaxIndex[2]);
                 }
               }
-              // Construct return object.
-              // Rebuild UV and Normal vectors for use in OpenGL.
-              ret = {
-                array: {
-                  vertices: new Float32Array(vertices),
-                  uvs: opt.loadList.uvs ? new Float32Array(mapIndices[1].length > 0 ? vertices.length / 3 * 2 : 0) : null,
-                  normals: opt.loadList.normals ? new Float32Array(mapIndices[2].length > 0 ? vertices.length : 0) : null
-                },
-                indices: new Uint16Array(mapIndices[0])
-              };
+              {
+                // Construct return object.
+                // Rebuild UV and Normal vectors for use in OpenGL.
+                let has = {};
+
+                has.uvs = mapIndices[1].length > 0;
+                has.normals = mapIndices[2].length > 0;
+                has.tangents = has.uvs && has.normals;
+
+                ret = {
+                  array: {
+                    vertices: new Float32Array(vertices),
+                    uvs: opt.loadList.uvs ? new Float32Array(has.uvs ? vertices.length / 3 * 2 : 0) : null,
+                    normals: opt.loadList.normals ? new Float32Array(has.normals ? vertices.length : 0) : null,
+                    tangents: opt.loadList.tangents ? new Float32Array(has.tangents ? vertices.length : 0) : null,
+                    bitangents: opt.loadList.tangents ? new Float32Array(has.tangents ? vertices.length : 0) : null
+                  },
+                  indices: new Uint16Array(mapIndices[0])
+                };
+              }
               if (ret.array.uvs) {
                 // Copy UV.
                 for (i = 0; i < mapIndices[0].length; i += 1) {
@@ -1369,6 +1437,110 @@ var Tut = (() => {
                   ret.array.normals[to] = normals[from];
                   ret.array.normals[to + 1] = normals[from + 1];
                   ret.array.normals[to + 2] = normals[from + 2];
+                }
+              }
+              if (ret.array.tangents) {
+                let d = {
+                  vert: {
+                    a: vec3.create(),
+                    b: vec3.create()
+                  },
+                  uv: {
+                    a: vec2.create(),
+                    b: vec2.create()
+                  },
+                  a: null,
+                  b: null,
+                  c: null
+                };
+                let n = {
+                  a: vec3.create(),
+                  b: vec3.create(),
+                  c: vec3.create()
+                };
+                let idx = {
+                  a: null,
+                  b: null,
+                  c: null
+                };
+                let op = {
+                  a: vec3.create(),
+                  b: vec3.create(),
+                  c: vec3.create()
+                };
+                let t = {
+                  o: vec3.create(),
+                  a: vec3.create(),
+                  b: vec3.create(),
+                  c: vec3.create()
+                };
+                let bt = vec3.create();
+                let r;
+
+                for (i = 0; i < mapIndices[0].length; i += 3) {
+                  // Fetch UV and calc the delta.
+                  idx.a = mapIndices[1][i + 1] * 2;
+                  idx.b = mapIndices[1][i] * 2;
+                  idx.c = mapIndices[1][i + 2] * 2;
+                  [d.uv.a[0], d.uv.a[1]] = [uvs[idx.a] - uvs[idx.b], uvs[idx.a + 1] - uvs[idx.b + 1]];
+                  [d.uv.b[0], d.uv.b[1]] = [uvs[idx.c] - uvs[idx.b], uvs[idx.c + 1] - uvs[idx.b + 1]];
+                  // Fetch normals.
+                  idx.a = mapIndices[2][i + 1] * 3;
+                  idx.b = mapIndices[2][i] * 3;
+                  idx.c = mapIndices[2][i + 2] * 3;
+                  [n.a[0], n.a[1], n.a[2]] = [normals[idx.a], normals[idx.a + 1], normals[idx.a + 2]];
+                  [n.b[0], n.b[1], n.b[2]] = [normals[idx.b], normals[idx.b + 1], normals[idx.b + 2]];
+                  [n.c[0], n.c[1], n.c[2]] = [normals[idx.c], normals[idx.c + 1], normals[idx.c + 2]];
+                  // Calc this for the last to reuse 'idx'.
+                  idx.a = mapIndices[0][i + 1] * 3;
+                  idx.b = mapIndices[0][i] * 3;
+                  idx.c = mapIndices[0][i + 2] * 3;
+                  [d.vert.a[0], d.vert.a[1], d.vert.a[2]] = [vertices[idx.a] - vertices[idx.b], vertices[idx.a + 1] - vertices[idx.b + 1], vertices[idx.a + 2] - vertices[idx.b + 2]];
+                  [d.vert.b[0], d.vert.b[1], d.vert.b[2]] = [vertices[idx.c] - vertices[idx.b], vertices[idx.c + 1] - vertices[idx.b + 1], vertices[idx.c + 2] - vertices[idx.b + 2]];
+
+                  r = 1 / (d.uv.a[0] * d.uv.b[1] - d.uv.a[1] * d.uv.b[0]);
+
+                  vec3.scale(op.a, d.vert.a, d.uv.b[1]);
+                  vec3.scale(op.b, d.vert.b, d.uv.a[1]);
+                  vec3.sub(op.c, op.a, op.b);
+                  vec3.scale(t.o, op.c, r);
+
+                  vec3.scale(op.a, d.vert.b, d.uv.a[0]);
+                  vec3.scale(op.b, d.vert.a, d.uv.b[0]);
+                  vec3.sub(op.c, op.a, op.b);
+                  vec3.scale(bt, op.c, r);
+
+                  // Adjust the tangents according to the normals.
+                  vec3.scale(op.a, n.a, vec3.dot(n.a, t.o));
+                  vec3.sub(op.a, t.o, op.a);
+                  vec3.normalize(t.a, op.a);
+                  vec3.cross(op.a, n.a, t.a);
+                  if (vec3.dot(op.a, bt) < 0.0) {
+                    vec3.scale(t.a, t.a, -1);
+                  }
+
+                  vec3.scale(op.a, n.b, vec3.dot(n.b, t.o));
+                  vec3.sub(op.a, t.o, op.a);
+                  vec3.normalize(t.b, op.a);
+                  vec3.cross(op.a, n.b, t.b);
+                  if (vec3.dot(op.a, bt) < 0.0) {
+                    vec3.scale(t.b, t.b, -1);
+                  }
+
+                  vec3.scale(op.a, n.c, vec3.dot(n.c, t.o));
+                  vec3.sub(op.a, t.o, op.a);
+                  vec3.normalize(t.c, op.a);
+                  vec3.cross(op.a, n.c, t.c);
+                  if (vec3.dot(op.a, bt) < 0.0) {
+                    vec3.scale(t.c, t.c, -1);
+                  }
+
+                  [ret.array.tangents[idx.a], ret.array.tangents[idx.a + 1], ret.array.tangents[idx.a + 2]] = [t.a[0], t.a[1], t.a[2]];
+                  [ret.array.tangents[idx.b], ret.array.tangents[idx.b + 1], ret.array.tangents[idx.b + 2]] = [t.b[0], t.b[1], t.b[2]];
+                  [ret.array.tangents[idx.c], ret.array.tangents[idx.c + 1], ret.array.tangents[idx.c + 2]] = [t.c[0], t.c[1], t.c[2]];
+                  [ret.array.bitangents[idx.a], ret.array.bitangents[idx.a + 1], ret.array.bitangents[idx.a + 2]] = [bt[0], bt[1], bt[2]];
+                  [ret.array.bitangents[idx.b], ret.array.bitangents[idx.b + 1], ret.array.bitangents[idx.b + 2]] = [bt[0], bt[1], bt[2]];
+                  [ret.array.bitangents[idx.c], ret.array.bitangents[idx.c + 1], ret.array.bitangents[idx.c + 2]] = [bt[0], bt[1], bt[2]];
                 }
               }
 

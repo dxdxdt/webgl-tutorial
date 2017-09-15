@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <script type="application/javascript" src="mod/gl-matrix.js"></script>
+  <script type="application/javascript" src="mod/tutils.js"></script>
+
+  <script type="application/javascript">
+  (function () {
+    "use strict";
+
+    window.addEventListener('load', function () {
+      let r;
+
+      r = new Tut.R.Pack([
+        new Tut.R.Source('obj', "assets/t13/cylinder.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('shader.main.vert', "assets/t13/shader.main.vert", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('shader.main.frag', "assets/t13/shader.main.frag", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('shader.debug.vert', "assets/t13/shader.debug.vert", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('shader.debug.frag', "assets/t13/shader.debug.frag", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('diffuse', "assets/t13/diffuse.png", Tut.R.TYPE.IMAGE),
+        new Tut.R.Source('normal', "assets/t13/normal.png", Tut.R.TYPE.IMAGE),
+        new Tut.R.Source('specular', "assets/t13/specular.png", Tut.R.TYPE.IMAGE),
+      ]);
+      r.onResult = function (r) {
+        if (!r.result) {
+          // Prevent fireGL() call.
+          this.onDone = null;
+        }
+      };
+      r.onDone = function () {
+        fireGL(this.bundle());
+      };
+      r.fetch();
+    });
+
+    function fireGL (rp) {
+      var watch = new Tut.PerfStopwatch();
+      var surface = document.getElementById("surface");
+      var gl = surface.getContext("webgl");
+      var prog = {};
+      var progInfoLog;
+      var cameraTracker = document.getElementById("cameraTracker");
+      var camera = new Tut.Camera();
+      var lockLight = document.getElementById("lockLight");
+      var vecLightPos = vec3.fromValues(0, 0, 4);
+      var inputOpt = {
+        mouse: {
+          factor: Math.deg2rad(0.05)
+        },
+        kbd: {
+          factor: 0.1
+        }
+      };
+      var inputRate = [0, 0]; // Forward, right.
+
+      watch.push(false);
+
+      // Prep resources.
+      {
+        let i, idx;
+        let v, n, t, bt, p;
+        let debug;
+        const len = 0.1;
+
+        rp.model = Tut.OBJ.parse(rp.obj);
+
+        // Assertions
+        Tut.assert(rp.model.array.normals.length > 0, "normals required from the model.");
+        Tut.assert(rp.model.array.tangents.length > 0 && rp.model.array.bitangents.length > 0, "tangents required from the model.");
+
+        // Generate "debug lines"
+        v = vec3.create();
+        n = vec3.create();
+        t = vec3.create();
+        bt = vec3.create();
+        p = vec3.create();
+        debug = {
+          lines: new Float32Array(rp.model.indices.length * 3 * 4),
+          indices: {
+            normals: new Uint16Array(rp.model.indices.length * 2),
+            tangents: new Uint16Array(rp.model.indices.length * 2),
+            bitangents: new Uint16Array(rp.model.indices.length * 2)
+          },
+          colour: {
+            normals: new Float32Array([0, 0, 1, 1]),
+            tangents: new Float32Array([1, 0, 0, 1]),
+            bitangents: new Float32Array([0, 1, 0, 1])
+          }
+        };
+        idx = {
+          lines: 0,
+          indices: 0,
+          p: 0
+        };
+
+        for (i of rp.model.indices) {
+          i *= 3;
+          [v[0], v[1], v[2]] = [rp.model.array.vertices[i], rp.model.array.vertices[i + 1], rp.model.array.vertices[i + 2]];
+          [n[0], n[1], n[2]] = [rp.model.array.normals[i], rp.model.array.normals[i + 1], rp.model.array.normals[i + 2]];
+          [t[0], t[1], t[2]] = [rp.model.array.tangents[i], rp.model.array.tangents[i + 1], rp.model.array.tangents[i + 2]];
+          [bt[0], bt[1], bt[2]] = [rp.model.array.bitangents[i], rp.model.array.bitangents[i + 1], rp.model.array.bitangents[i + 2]];
+
+          [debug.lines[idx.lines], debug.lines[idx.lines + 1], debug.lines[idx.lines + 2]] = [v[0], v[1], v[2]];
+
+          vec3.normalize(n, n)
+          vec3.scale(n, n, len);
+          vec3.add(p, v, n);
+          [debug.lines[idx.lines + 3], debug.lines[idx.lines + 4], debug.lines[idx.lines + 5]] = [p[0], p[1], p[2]];
+          vec3.normalize(t, t)
+          vec3.scale(t, t, len);
+          vec3.add(p, v, t);
+          [debug.lines[idx.lines + 6], debug.lines[idx.lines + 7], debug.lines[idx.lines + 8]] = [p[0], p[1], p[2]];
+          vec3.normalize(bt, bt)
+          vec3.scale(bt, bt, len);
+          vec3.add(p, v, bt);
+          [debug.lines[idx.lines + 9], debug.lines[idx.lines + 10], debug.lines[idx.lines + 11]] = [p[0], p[1], p[2]];
+
+          debug.indices.normals[idx.indices] = idx.p;
+          debug.indices.normals[idx.indices + 1] = idx.p + 1;
+          debug.indices.tangents[idx.indices] = idx.p;
+          debug.indices.tangents[idx.indices + 1] = idx.p + 2;
+          debug.indices.bitangents[idx.indices] = idx.p;
+          debug.indices.bitangents[idx.indices + 1] = idx.p + 3;
+
+          idx.lines += 12;
+          idx.indices += 2;
+          idx.p += 4;
+        }
+
+        rp.model.debug = debug;
+      }
+
+      camera.onupdate = function () {
+        var pos = [
+          this.position[0].toFixed(2),
+          this.position[1].toFixed(2),
+          this.position[2].toFixed(2)];
+        var angle = [
+          Math.rad2deg(this.angle.h).toFixed(1),
+          Math.rad2deg(this.angle.v).toFixed(1)];
+        var lightPos = [
+          vecLightPos[0].toFixed(2),
+          vecLightPos[1].toFixed(2),
+          vecLightPos[2].toFixed(2)];
+
+        Tut.setTextNode(cameraTracker,
+          "pos(" + pos.join(", ") + "), face(" + angle.join(", ") + "), light(" + lightPos.join(", ") + ")");
+      };
+
+      // Set up events.
+      (() => {
+        var pointerTracker = document.getElementById("pointerTracker");
+        var clickListener = function () {
+          surface.requestPointerLock();
+        };
+        var kdListener = function (evt) {
+          switch (evt.key) {
+          case 'w': inputRate[0] = inputOpt.kbd.factor; break;
+          case 's': inputRate[0] = -inputOpt.kbd.factor; break;
+          case 'd': inputRate[1] = inputOpt.kbd.factor; break;
+          case 'a': inputRate[1] = -inputOpt.kbd.factor; break;
+          }
+        };
+        var kuListener = function (evt) {
+          switch (evt.key) {
+          case 'w': inputRate[0] = 0; break;
+          case 's': inputRate[0] = 0; break;
+          case 'd': inputRate[1] = 0; break;
+          case 'a': inputRate[1] = 0; break;
+          }
+        };
+        var mmListener = (evt) => {
+          // Update camera status.
+          camera.addAngles(
+            inputOpt.mouse.factor * evt.movementX * -1,
+            inputOpt.mouse.factor * evt.movementY * -1);
+
+          Tut.setTextNode(pointerTracker, "x: " + evt.movementX + ", y: " + evt.movementY);
+        };
+
+        surface.addEventListener("click", clickListener, false);
+        document.addEventListener("pointerlockchange", () => {
+          if (document.pointerLockElement === surface) {
+            surface.removeEventListener("click", clickListener);
+            surface.addEventListener("mousemove", mmListener, false);
+          }
+          else {
+            surface.addEventListener("click", clickListener, false);
+            surface.removeEventListener("mousemove", mmListener);
+            Tut.setTextNode(pointerTracker);
+          }
+        }, false);
+        document.addEventListener("keydown", kdListener, false);
+        document.addEventListener("keyup", kuListener, false);
+      })();
+
+      watch.push(true);
+
+      prog.main = Tut.setupShader(gl, {
+        vert: rp.shader.main.vert,
+        frag: rp.shader.main.frag,
+        attrMap: {
+          'a_msPos': 0,
+          'a_uv': 1,
+          'a_msNormal': 2,
+          'a_msTangent': 3,
+          'a_msBitangent': 4
+        },
+        unif: [
+          'u_mvp',
+          'u_mv',
+          'u_v',
+          'u_m',
+          'u_wsLightPos',
+          'u_texDiffuse',
+          'u_texNormal',
+          'u_texSpecular',
+          'u_lightColour',
+          'u_ambientColour',
+          'u_lightPower'
+        ]
+      });
+      prog.debug = Tut.setupShader(gl, {
+        vert: rp.shader.debug.vert,
+        frag: rp.shader.debug.frag,
+        attrMap: {'a_pos': 0},
+        unif: ['u_mvp', 'u_colour']
+      });
+
+      watch.push(true);
+
+      (function () {
+        var frameCounter = document.getElementById("frameCounter");
+        var framePerf = new Tut.FrameCounter();
+        var frameWatch = new Tut.PerfStopwatch();
+        var buf, bufDebug, tex;
+        var matProj, matView, matModel, matMVP, matMV, matVP, mat3MV;
+        var vecLookPoint;
+        var vecLightColour = vec3.fromValues(1.0, 1.0, 1.0);
+        var vecAmbientColour = vec3.fromValues(0.1, 0.1, 0.1);
+        var lightPower = 40;
+        var lightDebug = {
+          lines: new Float32Array(21),
+          indices: new Uint16Array([0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6]),
+          colour: new Float32Array([1.0, 0.0, 1.0, 1.0]),
+          len: 0.5
+        };
+
+        watch.push(false);
+
+        matProj = mat4.create();
+        matView = mat4.create();
+        matModel = mat4.create();
+        matMVP = mat4.create();
+        vecLookPoint = vec3.create();
+        matMV = mat4.create();
+        matVP = mat4.create();
+        mat3MV = mat3.create();
+
+        buf = {
+          vertices: gl.createBuffer(),
+          uvs: gl.createBuffer(),
+          normals: gl.createBuffer(),
+          tangents: gl.createBuffer(),
+          bitangents: gl.createBuffer(),
+          indices: gl.createBuffer()
+        };
+        bufDebug = {
+          vert: {
+            vertices: gl.createBuffer(),
+            indices: {
+              normals: gl.createBuffer(),
+              tangents: gl.createBuffer(),
+              bitangents: gl.createBuffer()
+            }
+          },
+          light: {
+            vertices: gl.createBuffer(),
+            indices: gl.createBuffer()
+          }
+        };
+        tex = {
+          diffuse: gl.createTexture(),
+          normal: gl.createTexture(),
+          specular: gl.createTexture()
+        };
+
+        gl.clearColor(0.0, 0.0, 0.4, 1.0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.vertices);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.array.vertices, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.uvs);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.array.uvs, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.normals);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.array.normals, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.tangents);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.array.tangents, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.bitangents);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.array.bitangents, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.indices);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, rp.model.indices, gl.STATIC_DRAW);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, bufDebug.vert.vertices);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.debug.lines, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufDebug.light.indices);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, lightDebug.indices, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufDebug.vert.indices.normals);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, rp.model.debug.indices.normals, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufDebug.vert.indices.tangents);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, rp.model.debug.indices.tangents, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufDebug.vert.indices.bitangents);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, rp.model.debug.indices.bitangents, gl.STATIC_DRAW);
+
+        gl.bindTexture(gl.TEXTURE_2D, tex.diffuse);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, rp.diffuse);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.bindTexture(gl.TEXTURE_2D, tex.normal);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, rp.normal);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.bindTexture(gl.TEXTURE_2D, tex.specular);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, rp.specular);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+
+        watch.push(true);
+
+        var draw = function () {
+          frameWatch.reset().push();
+
+          // CPU intensive work before GL calls.
+
+          // Reflect user input.
+          // XXX: Probably not a good idea on slow machines.
+          camera.move(inputRate[0], inputRate[1]);
+          // Move the light pos too.
+          if (lockLight.checked) {
+            vec3.copy(vecLightPos, camera.position);
+          }
+
+          mat4.perspective(matProj, camera.fov, surface.width / surface.height, 0.1, 100.0);
+          vec3.add(vecLookPoint, camera.position, camera.direction);
+          mat4.lookAt(matView, camera.position, vecLookPoint, camera.up);
+          mat4.identity(matModel);
+          mat4.amul(matMVP, matProj, matView, matModel);
+          mat4.amul(matMV, matView, matModel);
+          mat4.amul(matVP, matProj, matView);
+          [mat3MV[0], mat3MV[1], mat3MV[2], mat3MV[3], mat3MV[4], mat3MV[5], mat3MV[6], mat3MV[7], mat3MV[8]] = [matMV[0], matMV[1], matMV[2], matMV[4], matMV[5], matMV[6], matMV[8], matMV[9], matMV[10]];
+
+          [lightDebug.lines[0], lightDebug.lines[1], lightDebug.lines[2]] = [vecLightPos[0], vecLightPos[1], vecLightPos[2]];
+          [lightDebug.lines[3], lightDebug.lines[4], lightDebug.lines[5]] = [vecLightPos[0] + lightDebug.len / 2, vecLightPos[1], vecLightPos[2]];
+          [lightDebug.lines[6], lightDebug.lines[7], lightDebug.lines[8]] = [vecLightPos[0], vecLightPos[1] + lightDebug.len / 2, vecLightPos[2]];
+          [lightDebug.lines[9], lightDebug.lines[10], lightDebug.lines[11]] = [vecLightPos[0] - lightDebug.len / 2, vecLightPos[1], vecLightPos[2]];
+          [lightDebug.lines[12], lightDebug.lines[13], lightDebug.lines[14]] = [vecLightPos[0], vecLightPos[1] - lightDebug.len / 2, vecLightPos[2]];
+          [lightDebug.lines[15], lightDebug.lines[16], lightDebug.lines[17]] = [vecLightPos[0], vecLightPos[1], vecLightPos[2] - lightDebug.len / 2];
+          [lightDebug.lines[18], lightDebug.lines[19], lightDebug.lines[20]] = [vecLightPos[0], vecLightPos[1], vecLightPos[2] + lightDebug.len / 2];
+
+          // GL calls.
+          gl.viewport(0, 0, surface.width, surface.height);
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.COLOR_DEPTH_BUFFER_BIT);
+
+          // The cylinder.
+          gl.useProgram(prog.main.prog);
+          gl.enable(gl.DEPTH_TEST);
+          gl.enable(gl.CULL_FACE);
+
+          gl.uniformMatrix4fv(prog.main.unif.u_mvp, false, matMVP);
+          gl.uniformMatrix3fv(prog.main.unif.u_mv, false, mat3MV);
+          gl.uniformMatrix4fv(prog.main.unif.u_v, false, matView);
+          gl.uniformMatrix4fv(prog.main.unif.u_m, false, matModel);
+          gl.uniform3fv(prog.main.unif.u_wsLightPos, vecLightPos);
+          gl.uniform3fv(prog.main.unif.u_lightColour, vecLightColour);
+          gl.uniform3fv(prog.main.unif.u_ambientColour, vecAmbientColour);
+          gl.uniform1f(prog.main.unif.u_lightPower, lightPower);
+
+          gl.uniform1i(prog.main.unif.u_texDiffuse, 0);
+          gl.uniform1i(prog.main.unif.u_texNormal, 1);
+          gl.uniform1i(prog.main.unif.u_texSpecular, 2);
+
+          gl.enableVertexAttribArray(0);
+          gl.enableVertexAttribArray(1);
+          gl.enableVertexAttribArray(2);
+          gl.enableVertexAttribArray(3);
+          gl.enableVertexAttribArray(4);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.vertices);
+          gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.uvs);
+          gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.normals);
+          gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.tangents);
+          gl.vertexAttribPointer(3, 3, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.bitangents);
+          gl.vertexAttribPointer(4, 3, gl.FLOAT, false, 0, 0);
+
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, tex.diffuse);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, tex.normal);
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, tex.specular);
+
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.indices);
+          gl.drawElements(gl.TRIANGLES, rp.model.indices.length, gl.UNSIGNED_SHORT, 0);
+
+          gl.disable(gl.DEPTH_TEST);
+          gl.disable(gl.CULL_FACE);
+
+          gl.disableVertexAttribArray(0);
+          gl.disableVertexAttribArray(1);
+          gl.disableVertexAttribArray(2);
+          gl.disableVertexAttribArray(3);
+          gl.disableVertexAttribArray(4);
+
+          // The debug lines
+          gl.useProgram(prog.debug.prog);
+          gl.enable(gl.DEPTH_TEST);
+          gl.enableVertexAttribArray(0);
+
+          // Light pos
+          gl.uniformMatrix4fv(prog.debug.unif.u_mvp, false, matVP);
+          gl.uniform4fv(prog.debug.unif.u_colour, lightDebug.colour);
+
+          gl.bindBuffer(gl.ARRAY_BUFFER, bufDebug.light.vertices);
+          gl.bufferData(gl.ARRAY_BUFFER, lightDebug.lines, gl.DYNAMIC_DRAW);
+          gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufDebug.light.indices);
+          gl.drawElements(gl.LINES, lightDebug.indices.length, gl.UNSIGNED_SHORT, 0);
+          // TBN lines
+          gl.uniformMatrix4fv(prog.debug.unif.u_mvp, false, matMVP);
+
+          gl.bindBuffer(gl.ARRAY_BUFFER, bufDebug.vert.vertices);
+          gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+          gl.uniform4fv(prog.debug.unif.u_colour, rp.model.debug.colour.normals);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufDebug.vert.indices.normals);
+          gl.drawElements(gl.LINES, rp.model.debug.indices.normals.length, gl.UNSIGNED_SHORT, 0);
+
+          gl.uniform4fv(prog.debug.unif.u_colour, rp.model.debug.colour.tangents);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufDebug.vert.indices.tangents);
+          gl.drawElements(gl.LINES, rp.model.debug.indices.tangents.length, gl.UNSIGNED_SHORT, 0);
+
+          gl.uniform4fv(prog.debug.unif.u_colour, rp.model.debug.colour.bitangents);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufDebug.vert.indices.bitangents);
+          gl.drawElements(gl.LINES, rp.model.debug.indices.bitangents.length, gl.UNSIGNED_SHORT, 0);
+
+          gl.disable(gl.DEPTH_TEST);
+          gl.disableVertexAttribArray(0);
+
+
+          gl.flush();
+
+          frameWatch.push();
+          framePerf.push(frameWatch.ts[1] - frameWatch.ts[0]);
+          requestAnimationFrame(draw);
+        };
+
+        requestAnimationFrame(draw);
+
+        setInterval(function () {
+          var str;
+
+          if (framePerf.calc().cnt) {
+            str = framePerf.cnt +
+              " (sum: " + framePerf.sum.toFixed(4) +
+              ", mean: " + framePerf.mean.toFixed(4) +
+              ", min: " + framePerf.min.toFixed(4) +
+              ", max: " + framePerf.max.toFixed(4) +
+              ", stdev: " + framePerf.stdev.toFixed(4) + ")";
+          }
+          else {
+            str = "0";
+          }
+
+          Tut.setTextNode(frameCounter, str);
+        }, 1000);
+      })();
+    }})();
+  </script>
+</head>
+<body>
+  <p>
+    <div><span>Facing: </span><span id="cameraTracker"></span></div>
+    <div><span>Movement: </span><span id="pointerTracker"></span></div>
+  </p>
+  <p>
+    <canvas id="surface" width="800" height="600"></canvas>
+  </p>
+  <p>
+    <input id="lockLight" type="checkbox"/>
+    <span>
+      Light pos follows camera pos.
+    </span>
+  </p>
+  <p>
+    <div id="frameCounter"></div>
+  </p>
+</body>
+</html>
