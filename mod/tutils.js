@@ -1128,6 +1128,7 @@ var Tut = (() => {
       arr.push(glParam("GL_MAX_VARYING_VECTORS"));
       arr.push(glParam("GL_ALIASED_POINT_SIZE_RANGE"));
       arr.push(glParam("GL_SAMPLES"));
+      arr.push(glParam("GL_MAX_RENDERBUFFER_SIZE"));
       console.info(arr.join("\n"));
 
       arr = [];
@@ -1203,6 +1204,16 @@ var Tut = (() => {
             }
           },
 
+          parseOpt: function () {
+            return {
+              loadList: {
+                uvs: true,
+                normals: true,
+                tangents: true
+              }
+            };
+          },
+
           // Parses an OBJ file format string and returns an object containing
           // parsed data like vertices and normals.
           // 'src': a string of OBJ file content
@@ -1212,11 +1223,11 @@ var Tut = (() => {
           // a different parsing result. Below is an example option:
           // {
           //   loadList: {
-          //     // Whether to parse and return UV coordinates.
+          //     // Parse and return UV coordinates.
           //     'uvs': true,
-          //     // Whether to parse and return normal vectors.
+          //     // Parse and return normal vectors.
           //     'normals': true,
-          //     // Whether to calculate and return tangents and bitangents from uvs and normals.
+          //     // Calculate and return tangents and bitangents from uvs and normals.
           //     'tangents': true
           //   }
           // }
@@ -1269,13 +1280,7 @@ var Tut = (() => {
               let w, index, to, from;
               let ret;
 
-              opt = opt || {
-                loadList: {
-                  uvs: true,
-                  normals: true,
-                  tangents: true
-                }
-              };
+              opt = opt || Tut.OBJ.parseOpt();
               vertices = [];
               uvs = opt.loadList.uvs ? [] : null;
               normals = opt.loadList.normals ? [] : null;

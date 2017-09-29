@@ -67,10 +67,6 @@
         if (!rp.model.suzanne.geo.array.normals.length) {
           Tut.throwFreezed(new Error("normals required from Suzanne's model."));
         }
-        // Invert the coordinates to use DDS texture.
-        for (i = 1; i < rp.model.suzanne.geo.array.uvs.length; i += 2) {
-          rp.model.suzanne.geo.array.uvs[i] = 1 - rp.model.suzanne.geo.array.uvs[i];
-        }
 
         Tut.initText2D({
           texture: rp.text2d.texture,
@@ -259,7 +255,7 @@
 
           // GL calls.
           gl.viewport(0, 0, surface.width, surface.height);
-          gl.clear(gl.COLOR_BUFFER_BIT | gl.COLOR_DEPTH_BUFFER_BIT);
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
           // Suzanne
           gl.useProgram(progObj);
@@ -338,9 +334,7 @@
   </p>
   <p>
     <input id="lockLight" type="checkbox"/>
-    <span>
-      Light pos follows camera pos.
-    </span>
+    <label for='lockLight'>Light pos follows camera pos.</label>
   </p>
   <p>
     <div id="frameCounter"></div>

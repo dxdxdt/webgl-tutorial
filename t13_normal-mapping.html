@@ -362,7 +362,7 @@
 
           // GL calls.
           gl.viewport(0, 0, surface.width, surface.height);
-          gl.clear(gl.COLOR_BUFFER_BIT | gl.COLOR_DEPTH_BUFFER_BIT);
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
           // The cylinder.
           gl.useProgram(prog.main.prog);
@@ -494,9 +494,7 @@
   </p>
   <p>
     <input id="lockLight" type="checkbox"/>
-    <span>
-      Light pos follows camera pos.
-    </span>
+    <label for='lockLight'>Light pos follows camera pos.</label>
   </p>
   <p>
     <div id="frameCounter"></div>

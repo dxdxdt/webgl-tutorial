@@ -13,10 +13,12 @@
       let r;
 
       r = new Tut.R.Pack([
-        new Tut.R.Source('shader.yuv.vert', "assets/x2/shader.yuv.p.vert", Tut.R.TYPE.TEXT),
-        new Tut.R.Source('shader.yuv.frag', "assets/x2/shader.yuv.p.frag", Tut.R.TYPE.TEXT),
-        new Tut.R.Source('yuv.data', "assets/x2/color-test.yuv", Tut.R.TYPE.ARRAYBUFFER),
-        new Tut.R.Source('yuv.meta', "assets/x2/color-test.json", Tut.R.TYPE.JSON)
+        new Tut.R.Source('shader.wobbly.vert', "assets/t14/wobbly.shader.vert", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('shader.wobbly.frag', "assets/t14/wobbly.shader.frag", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('shader.suzanne.vert', "assets/t14/suzanne.shader.vert", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('shader.suzanne.frag', "assets/t14/suzanne.shader.frag", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('model.suzanne.obj', "assets/models/suzanne/suzanne.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('model.suzanne.tex', "assets/models/suzanne/suzanne.png", Tut.R.TYPE.IMAGE)
       ]);
       r.onResult = function (r) {
         if (!r.result) {
@@ -38,6 +40,8 @@
       var progInfoLog;
       var cameraTracker = document.getElementById("cameraTracker");
       var camera = new Tut.Camera();
+      var lockLight = document.getElementById("lockLight");
+      var vecLightPos = vec3.fromValues(4, 4, 4);
       var inputOpt = {
         mouse: {
           factor: Math.deg2rad(0.05)
@@ -50,8 +54,13 @@
 
       watch.push(false);
 
-      [camera.position[0], camera.position[1], camera.position[2]] = [0, 0, -2];
-      camera.setAngles(0, 0);
+      // Prep resources.
+      {
+        rp.model.suzanne.model = Tut.OBJ.parse(rp.model.suzanne.obj);
+        // Assertions
+        Tut.assert(rp.model.suzanne.model.array.normals.length > 0, "normals required from the model.");
+        Tut.assert(rp.model.suzanne.model.array.uvs.length > 0, "uvs required from the model.");
+      }
 
       camera.onupdate = function () {
         var pos = [
@@ -61,9 +70,13 @@
         var angle = [
           Math.rad2deg(this.angle.h).toFixed(1),
           Math.rad2deg(this.angle.v).toFixed(1)];
+        var lightPos = [
+          vecLightPos[0].toFixed(2),
+          vecLightPos[1].toFixed(2),
+          vecLightPos[2].toFixed(2)];
 
         Tut.setTextNode(cameraTracker,
-          "pos(" + pos.join(", ") + "), face(" + angle.join(", ") + ")");
+          "pos(" + pos.join(", ") + "), face(" + angle.join(", ") + "), light(" + lightPos.join(", ") + ")");
       };
 
       // Set up events.
@@ -115,19 +128,32 @@
 
       watch.push(true);
 
-      prog.yuv = Tut.setupShader(gl, {
-        vert: rp.shader.yuv.vert,
-        frag: rp.shader.yuv.frag,
+      prog.suzanne = Tut.setupShader(gl, {
+        vert: rp.shader.suzanne.vert,
+        frag: rp.shader.suzanne.frag,
         attrMap: {
-          'a_pos': 0,
-          'a_uv': 1
+          'a_msPos': 0,
+          'a_uv': 1,
+          'a_msNormal': 2
         },
         unif: [
           'u_mvp',
-          'u_texY',
-          'u_texU',
-          'u_texV',
-          'u_diffuse'
+          'u_view',
+          'u_model',
+          'u_wsLightPos',
+          'u_tex'
+        ]
+      });
+      prog.wobbly = Tut.setupShader(gl, {
+        vert: rp.shader.wobbly.vert,
+        frag: rp.shader.wobbly.frag,
+        attrMap: {
+          'a_pos': 0
+        },
+        unif: [
+          'u_time',
+          'u_tex',
+          'u_dim'
         ]
       });
 
@@ -137,33 +163,10 @@
         var frameCounter = document.getElementById("frameCounter");
         var framePerf = new Tut.FrameCounter();
         var frameWatch = new Tut.PerfStopwatch();
-        var buf, bufDebug, tex;
+        var buf, tex, rb, fb;
         var matProj, matView, matModel, matMVP;
         var vecLookPoint;
-        const pictureSize = {
-          luma: rp.yuv.meta.width * rp.yuv.meta.height,
-          chroma: rp.yuv.meta.width * rp.yuv.meta.height / 4
-        };
-        const aspectRatio = rp.yuv.meta.width / rp.yuv.meta.height;
-        var picture = {
-          y: new Uint8Array(rp.yuv.data, 0, pictureSize.luma),
-          u: new Uint8Array(rp.yuv.data, pictureSize.luma, pictureSize.chroma),
-          v: new Uint8Array(rp.yuv.data, pictureSize.luma + pictureSize.chroma, pictureSize.chroma)
-        };
-        var diffuse = new Float32Array([1.0, 1.0, 1.0, 1.0]);
-        var obj = {
-          vertices: new Float32Array([
-            -aspectRatio, 1.0, 0.0,
-            aspectRatio, 1.0, 0.0,
-            aspectRatio, -1.0, 0.0,
-            -aspectRatio, -1.0, 0.0]),
-          uvs: new Float32Array([
-            1.0, 0.0,
-            0.0, 0.0,
-            0.0, 1.0,
-            1.0, 1.0]),
-          indices: new Uint16Array([3, 2, 0, 1, 3])
-        };
+        let fbStatus;
 
         watch.push(false);
 
@@ -176,22 +179,61 @@
         buf = {
           vertices: gl.createBuffer(),
           uvs: gl.createBuffer(),
-          indices: gl.createBuffer()
+          normals: gl.createBuffer(),
+          indices: gl.createBuffer(),
+          quad: gl.createBuffer()
         };
         tex = {
-          y: gl.createTexture(),
-          u: gl.createTexture(),
-          v: gl.createTexture()
+          suzanne: gl.createTexture(),
+          colour: gl.createTexture()
+        };
+        rb = {
+          depth: gl.createRenderbuffer()
+        };
+        fb = {
+          main: gl.createFramebuffer()
         };
 
-        gl.clearColor(0.0, 0.0, 0.2, 1.0);
-
         gl.bindBuffer(gl.ARRAY_BUFFER, buf.vertices);
-        gl.bufferData(gl.ARRAY_BUFFER, obj.vertices, gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.suzanne.model.array.vertices, gl.STATIC_DRAW);
         gl.bindBuffer(gl.ARRAY_BUFFER, buf.uvs);
-        gl.bufferData(gl.ARRAY_BUFFER, obj.uvs, gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.suzanne.model.array.uvs, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.normals);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.suzanne.model.array.normals, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.quad);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+          -1.0, -1.0, 0.0,
+      		 1.0, -1.0, 0.0,
+      		-1.0,  1.0, 0.0,
+      		-1.0,  1.0, 0.0,
+      		 1.0, -1.0, 0.0,
+      		 1.0,  1.0, 0.0
+        ]), gl.STATIC_DRAW);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.indices);
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, obj.indices, gl.STATIC_DRAW);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, rp.model.suzanne.model.indices, gl.STATIC_DRAW);
+
+        gl.bindTexture(gl.TEXTURE_2D, tex.suzanne);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, rp.model.suzanne.tex);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+
+        gl.bindTexture(gl.TEXTURE_2D, tex.colour);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, surface.width, surface.height, 0, gl.RGB, gl.UNSIGNED_SHORT_5_6_5, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        gl.bindRenderbuffer(gl.RENDERBUFFER, rb.depth);
+        gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, surface.width, surface.height);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb.main);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex.colour, 0);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb.depth);
+        fbStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        Tut.assert(fbStatus === gl.FRAMEBUFFER_COMPLETE, "Framebuffer incomplete.");
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         watch.push(true);
 
@@ -215,59 +257,67 @@
           mat4.amul(matMVP, matProj, matView, matModel);
 
           // GL calls.
+          // Suzanne on FBO
+          gl.bindFramebuffer(gl.FRAMEBUFFER, fb.main);
+          gl.clearColor(0.0, 0.0, 0.4, 1.0);
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
           gl.viewport(0, 0, surface.width, surface.height);
-          gl.clear(gl.COLOR_BUFFER_BIT | gl.COLOR_DEPTH_BUFFER_BIT);
 
-          // The picture
-          gl.useProgram(prog.yuv.prog);
+          gl.useProgram(prog.suzanne.prog);
           gl.enable(gl.DEPTH_TEST);
+          gl.enable(gl.CULL_FACE);
 
-          gl.uniformMatrix4fv(prog.yuv.unif.u_mvp, false, matMVP);
-          gl.uniform4fv(prog.yuv.unif.u_diffuse, diffuse);
-          gl.uniform1i(prog.yuv.unif.u_texY, 0);
-          gl.uniform1i(prog.yuv.unif.u_texU, 1);
-          gl.uniform1i(prog.yuv.unif.u_texV, 2);
-
-          gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-
-          gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, tex.y);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, rp.yuv.meta.width, rp.yuv.meta.height, 0, gl.ALPHA, gl.UNSIGNED_BYTE, picture.y);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-          gl.activeTexture(gl.TEXTURE1);
-          gl.bindTexture(gl.TEXTURE_2D, tex.u);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, rp.yuv.meta.width / 2, rp.yuv.meta.height / 2, 0, gl.ALPHA, gl.UNSIGNED_BYTE, picture.u);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-          gl.activeTexture(gl.TEXTURE2);
-          gl.bindTexture(gl.TEXTURE_2D, tex.v);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, rp.yuv.meta.width / 2, rp.yuv.meta.height / 2, 0, gl.ALPHA, gl.UNSIGNED_BYTE, picture.v);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-          gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+          gl.uniformMatrix4fv(prog.suzanne.unif.u_mvp, false, matMVP);
+          gl.uniformMatrix4fv(prog.suzanne.unif.u_view, false, matView);
+          gl.uniformMatrix4fv(prog.suzanne.unif.u_model, false, matModel);
+          gl.uniform3fv(prog.suzanne.unif.u_wsLightPos, vecLightPos);
+          gl.uniform1i(prog.suzanne.unif.u_tex, 0);
 
           gl.enableVertexAttribArray(0);
           gl.enableVertexAttribArray(1);
+          gl.enableVertexAttribArray(2);
           gl.bindBuffer(gl.ARRAY_BUFFER, buf.vertices);
           gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
           gl.bindBuffer(gl.ARRAY_BUFFER, buf.uvs);
           gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.normals);
+          gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
+
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, tex.suzanne);
 
           gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.indices);
-          gl.drawElements(gl.TRIANGLE_STRIP, obj.indices.length, gl.UNSIGNED_SHORT, 0);
+          gl.drawElements(gl.TRIANGLES, rp.model.suzanne.model.indices.length, gl.UNSIGNED_SHORT, 0);
 
           gl.disable(gl.DEPTH_TEST);
+          gl.disable(gl.CULL_FACE);
 
           gl.disableVertexAttribArray(0);
           gl.disableVertexAttribArray(1);
+          gl.disableVertexAttribArray(2);
+
+          // Wobbly on screen
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.clearColor(0.0, 0.0, 0.0, 1.0);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.viewport(0, 0, surface.width, surface.height);
+
+          gl.useProgram(prog.wobbly.prog);
+
+          gl.uniform1f(prog.wobbly.unif.u_time, frameWatch.ts[0]);
+          gl.uniform2f(prog.wobbly.unif.u_dim, surface.width, surface.height);
+          gl.uniform1i(prog.wobbly.unif.u_tex, 0);
+
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, tex.colour);
+
+          gl.enableVertexAttribArray(0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.quad);
+          gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+          gl.disableVertexAttribArray(0);
 
 
           gl.flush();
@@ -310,9 +360,7 @@
   </p>
   <p>
     <input id="lockLight" type="checkbox"/>
-    <span>
-      Light pos follows camera pos.
-    </span>
+    <label for='lockLight'>Light pos follows camera pos.</label>
   </p>
   <p>
     <div id="frameCounter"></div>
