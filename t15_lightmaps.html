@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <script type="application/javascript" src="mod/gl-matrix.js"></script>
+  <script type="application/javascript" src="mod/tutils.js"></script>
+
+  <script type="application/javascript">
+  (function () {
+    "use strict";
+
+    window.addEventListener('load', function () {
+      let r;
+
+      r = new Tut.R.Pack([
+        new Tut.R.Source('shader.vert', "assets/t15/shader.vert", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('shader.frag', "assets/t15/shader.frag", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('model.room.obj', "assets/t15/room.obj", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('model.room.lm', "assets/t15/lightmap.png", Tut.R.TYPE.IMAGE)
+      ]);
+      r.onResult = function (r) {
+        if (!r.result) {
+          // Prevent fireGL() call.
+          this.onDone = null;
+        }
+      };
+      r.onDone = function () {
+        fireGL(this.bundle());
+      };
+      r.fetch();
+    });
+
+    function fireGL (rp) {
+      var watch = new Tut.PerfStopwatch();
+      var surface = document.getElementById("surface");
+      var gl = surface.getContext("webgl");
+      var prog = {};
+      var progInfoLog;
+      var cameraTracker = document.getElementById("cameraTracker");
+      var camera = new Tut.Camera();
+      var inputOpt = {
+        mouse: {
+          factor: Math.deg2rad(0.05)
+        },
+        kbd: {
+          factor: 0.1
+        }
+      };
+      var inputRate = [0, 0]; // Forward, right.
+
+      watch.push(false);
+
+      // Prep resources.
+      rp.model.room.model = Tut.OBJ.parse(rp.model.room.obj);
+
+      camera
+        .setPos(6.98, 8.36, -4.75)
+        .setAngles(Math.deg2rad(-48.6), Math.deg2rad(-37.6));
+      camera.onupdate = function () {
+        var pos = [
+          this.position[0].toFixed(2),
+          this.position[1].toFixed(2),
+          this.position[2].toFixed(2)];
+        var angle = [
+          Math.rad2deg(this.angle.h).toFixed(1),
+          Math.rad2deg(this.angle.v).toFixed(1)];
+
+        Tut.setTextNode(cameraTracker, "pos(" + pos.join(", ") + "), face(" + angle.join(", ") + ")");
+      };
+
+      // Set up events.
+      (() => {
+        var pointerTracker = document.getElementById("pointerTracker");
+        var clickListener = function () {
+          surface.requestPointerLock();
+        };
+        var kdListener = function (evt) {
+          switch (evt.key) {
+          case 'w': inputRate[0] = inputOpt.kbd.factor; break;
+          case 's': inputRate[0] = -inputOpt.kbd.factor; break;
+          case 'd': inputRate[1] = inputOpt.kbd.factor; break;
+          case 'a': inputRate[1] = -inputOpt.kbd.factor; break;
+          }
+        };
+        var kuListener = function (evt) {
+          switch (evt.key) {
+          case 'w': inputRate[0] = 0; break;
+          case 's': inputRate[0] = 0; break;
+          case 'd': inputRate[1] = 0; break;
+          case 'a': inputRate[1] = 0; break;
+          }
+        };
+        var mmListener = (evt) => {
+          // Update camera status.
+          camera.addAngles(
+            inputOpt.mouse.factor * evt.movementX * -1,
+            inputOpt.mouse.factor * evt.movementY * -1);
+
+          Tut.setTextNode(pointerTracker, "x: " + evt.movementX + ", y: " + evt.movementY);
+        };
+
+        surface.addEventListener("click", clickListener, false);
+        document.addEventListener("pointerlockchange", () => {
+          if (document.pointerLockElement === surface) {
+            surface.removeEventListener("click", clickListener);
+            surface.addEventListener("mousemove", mmListener, false);
+          }
+          else {
+            surface.addEventListener("click", clickListener, false);
+            surface.removeEventListener("mousemove", mmListener);
+            Tut.setTextNode(pointerTracker);
+          }
+        }, false);
+        document.addEventListener("keydown", kdListener, false);
+        document.addEventListener("keyup", kuListener, false);
+      })();
+
+      watch.push(true);
+
+      prog = Tut.setupShader(gl, {
+        vert: rp.shader.vert,
+        frag: rp.shader.frag,
+        attrMap: {
+          'a_pos': 0,
+          'a_uv': 1
+        },
+        unif: [
+          'u_mvp',
+          'u_tex'
+        ]
+      });
+
+      watch.push(true);
+
+      (function () {
+        var frameCounter = document.getElementById("frameCounter");
+        var framePerf = new Tut.FrameCounter();
+        var frameWatch = new Tut.PerfStopwatch();
+        var buf, tex;
+        var matProj, matView, matModel, matMVP;
+        var vecLookPoint;
+
+        watch.push(false);
+
+        matProj = mat4.create();
+        matView = mat4.create();
+        matModel = mat4.create();
+        matMVP = mat4.create();
+        vecLookPoint = vec3.create();
+
+        buf = {
+          vertices: gl.createBuffer(),
+          uvs: gl.createBuffer(),
+          normals: gl.createBuffer(),
+          indices: gl.createBuffer()
+        };
+        tex = {
+          lm: gl.createTexture()
+        };
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.vertices);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.room.model.array.vertices, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.uvs);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.room.model.array.uvs, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.normals);
+        gl.bufferData(gl.ARRAY_BUFFER, rp.model.room.model.array.normals, gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.indices);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, rp.model.room.model.indices, gl.STATIC_DRAW);
+
+        gl.bindTexture(gl.TEXTURE_2D, tex.lm);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, rp.model.room.lm);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+
+        watch.push(true);
+
+        var draw = function () {
+          frameWatch.reset().push();
+
+          // CPU intensive work before GL calls.
+
+          // Reflect user input.
+          // XXX: Probably not a good idea on slow machines.
+          camera.move(inputRate[0], inputRate[1]);
+
+          mat4.perspective(matProj, camera.fov, surface.width / surface.height, 0.1, 100.0);
+          vec3.add(vecLookPoint, camera.position, camera.direction);
+          mat4.lookAt(matView, camera.position, vecLookPoint, camera.up);
+          mat4.identity(matModel);
+          mat4.amul(matMVP, matProj, matView, matModel);
+
+          // GL calls
+          // The room
+          gl.clearColor(0.0, 0.0, 0.4, 1.0);
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          gl.viewport(0, 0, surface.width, surface.height);
+
+          gl.useProgram(prog.prog);
+          gl.enable(gl.DEPTH_TEST);
+          gl.enable(gl.CULL_FACE);
+
+          gl.uniformMatrix4fv(prog.unif.u_mvp, false, matMVP);
+          gl.uniform1i(prog.unif.u_tex, 0);
+
+          gl.enableVertexAttribArray(0);
+          gl.enableVertexAttribArray(1);
+          gl.enableVertexAttribArray(2);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.vertices);
+          gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.uvs);
+          gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf.normals);
+          gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
+
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, tex.lm);
+
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.indices);
+          gl.drawElements(gl.TRIANGLES, rp.model.room.model.indices.length, gl.UNSIGNED_SHORT, 0);
+
+          gl.disable(gl.DEPTH_TEST);
+          gl.disable(gl.CULL_FACE);
+
+          gl.disableVertexAttribArray(0);
+          gl.disableVertexAttribArray(1);
+          gl.disableVertexAttribArray(2);
+
+
+          gl.flush();
+
+          frameWatch.push();
+          framePerf.push(frameWatch.ts[1] - frameWatch.ts[0]);
+          requestAnimationFrame(draw);
+        };
+
+        requestAnimationFrame(draw);
+
+        setInterval(function () {
+          var str;
+
+          if (framePerf.calc().cnt) {
+            str = framePerf.cnt +
+              " (sum: " + framePerf.sum.toFixed() +
+              ", mean: " + framePerf.mean.toFixed(4) +
+              ", min: " + framePerf.min.toFixed(4) +
+              ", max: " + framePerf.max.toFixed(4) +
+              ", stdev: " + framePerf.stdev.toFixed(4) + ")";
+          }
+          else {
+            str = "0";
+          }
+
+          Tut.setTextNode(frameCounter, str);
+        }, 1000);
+      })();
+    }})();
+  </script>
+</head>
+<body>
+  <p>
+    <div><span>Facing: </span><span id="cameraTracker"></span></div>
+    <div><span>Movement: </span><span id="pointerTracker"></span></div>
+  </p>
+  <p>
+    <canvas id="surface" width="800" height="600"></canvas>
+  </p>
+  <p>
+    <div id="frameCounter"></div>
+  </p>
+</body>
+</html>

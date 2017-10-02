@@ -256,6 +256,11 @@ var Tut = (() => {
 
           return this;
         };
+        this.setPos = function (x, y, z) {
+          [this.position[0], this.position[1], this.position[2]] = [x, y, z];
+          this.onupdate();
+          return this;
+        };
         this.move = function (direction, right) {
           var i;
 
