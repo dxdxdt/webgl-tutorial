@@ -296,6 +296,110 @@ var Tut = (() => {
       }
     },
 
+    Object: class {
+      constructor () {
+        var model = 0;
+        var quat = quat.create();
+        var translate = vec3.fromValues(0, 0, 0);
+        var scale = vec3.fromValues(1, 1, 1);
+        var mat = mat4.create();
+
+        quat.identity(quat);
+
+        Object.defineProperties(this, {
+          model: {
+            get: function () {
+              return model;
+            },
+            set: function (x) {
+              model = x;
+              return model;
+            },
+            configurable: true
+          },
+          quat: {
+            get: function () {
+              return quat;
+            },
+            set: function (x) {
+              quat.copy(quat, x);
+              return quat;
+            },
+            configurable: true
+          },
+          setEulerDegrees: {
+            value: function (x, y, z) {
+              quat.fromEuler(quat, x, y, z);
+              return this;
+            },
+            configurable: true
+          },
+          setEulerRadians: {
+            value: function (x, y, z) {
+              quat.fromEuler(quat, Math.rad2deg(x), Math.rad2deg(y), Math.rad2deg(z));
+              return this;
+            },
+            configurable: true
+          },
+          translate: {
+            get: function () {
+              return translate;
+            },
+            set: function (x) {
+              vec3.copy(translate, x);
+            },
+            configurable: true
+          },
+          scale: {
+            get: function () {
+              return scale;
+            },
+            set: function (x) {
+              vec3.copy(scale, x);
+              return scale;
+            },
+            configurable: true
+          },
+          matrix: {
+            get: function () {
+              return mat;
+            },
+            configurable: true
+          },
+          updateMatrix: {
+            value: function () {
+              mat4.fromRotationTranslationScale(mat, quat, translate, scale);
+              return this;
+            },
+            configurable: true
+          },
+          toObject: {
+            value: function (out) {
+              let ret = out || {};
+
+              ret.quat = Array.from(quat);
+              ret.translate = Array.from(translate);
+              ret.scale = Array.from(scale);
+
+              return ret;
+            },
+            configurable: true
+          },
+          fromObject: {
+            value: function (x) {
+              this.quat = x.quat;
+              this.translate = x.translate;
+              this.scale = x.scale;
+              return this;
+            },
+            configurable: true
+          }
+        });
+
+        this.updateMatrix();
+      }
+    },
+
     R: (function () {
         var __TYPES__ = Object.freeze({
           TEXT: 0,
@@ -1096,10 +1200,61 @@ var Tut = (() => {
 
       return ret;
     },
+    uploadModel: (function () {
+      var __uploadBuffer = function (gl, ret, name, array, flag) {
+        if (flag && array) {
+          let b = ret.buf[name] = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, b);
+          gl.bufferData(gl.ARRAY_BUFFER, array, gl.STATIC_DRAW);
+        }
+      };
+      var __uploadTexture = function (gl, ret, name, img, flag) {
+        if (flag && img) {
+          let t = ret.tex[name] = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, t);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
+        }
+      };
+
+      return function (gl, m, opt) {
+        let ret = {
+          buf: {},
+          tex: {}
+        };
+        opt = opt || {
+          array: {
+            uv: true,
+            normal: true,
+            tangent: true,
+            bitangent: true
+          },
+          texture: {
+            surface: true,
+            normal: true,
+            specular: true
+          }
+        };
+
+        __uploadTexture(gl, ret, 'surface', m.texture.surface, opt.texture.surface);
+        __uploadTexture(gl, ret, 'normal', m.texture.normal, opt.texture.normal);
+        __uploadTexture(gl, ret, 'specular', m.texture.specular, opt.texture.specular);
+        __uploadBuffer(gl, ret, 'vertex', m.array.vertex, true);
+        __uploadBuffer(gl, ret, 'uv', m.array.uvs, opt.array.uv);
+        __uploadBuffer(gl, ret, 'normal', m.array.normals, opt.array.normal);
+        __uploadBuffer(gl, ret, 'tangent', m.array.tangents, opt.array.tangent);
+        __uploadBuffer(gl, ret, 'bitangent', m.array.bitangents, opt.array.bitangent);
+        ret.buf.indices = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ret.buf.indices);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.indices, gl.STATIC_DRAW);
+
+        return ret;
+      };
+    })(),
     // Prints the capability of the WebGL rendering context to the console.
     // For debugging purpose.
     // 'gl': a WebGL rendering context
-    printGLCap: (gl) => {
+    // 'cb': a callback function with which to receive output string
+    printGLCap: (gl, cb) => {
       var shaderPrecision = (s, t) => {
         var x = gl.getShaderPrecisionFormat(gl[s], gl[t]);
 
@@ -1125,6 +1280,10 @@ var Tut = (() => {
       };
       var arr;
 
+      cb = cb || function (str) {
+        console.info(str);
+      };
+
       arr = [];
       arr.push(glParam("GL_MAX_TEXTURE_IMAGE_UNITS"));
       arr.push(glParam("GL_MAX_VERTEX_UNIFORM_VECTORS"));
@@ -1134,7 +1293,7 @@ var Tut = (() => {
       arr.push(glParam("GL_ALIASED_POINT_SIZE_RANGE"));
       arr.push(glParam("GL_SAMPLES"));
       arr.push(glParam("GL_MAX_RENDERBUFFER_SIZE"));
-      console.info(arr.join("\n"));
+      cb(arr.join("\n"));
 
       arr = [];
       arr.push(shaderPrecision("VERTEX_SHADER", "LOW_FLOAT"));
@@ -1149,9 +1308,9 @@ var Tut = (() => {
       arr.push(shaderPrecision("FRAGMENT_SHADER", "LOW_INT"));
       arr.push(shaderPrecision("FRAGMENT_SHADER", "MEDIUM_INT"));
       arr.push(shaderPrecision("FRAGMENT_SHADER", "HIGH_INT"));
-      console.info(arr.join("\n"));
+      cb(arr.join("\n"));
 
-      console.info(gl.getSupportedExtensions().join("\n"));
+      cb(gl.getSupportedExtensions().join("\n"));
     },
 
     checkClass: function () {
@@ -1283,6 +1442,7 @@ var Tut = (() => {
               let arrLines, arrWords, arrIndices, mapIndices, mapMaxIndex;
               let vertices, uvs, normals;
               let w, index, to, from;
+              let has = {};
               let ret;
 
               opt = opt || Tut.OBJ.parseOpt();
@@ -1410,26 +1570,24 @@ var Tut = (() => {
                   checkBounds('Vertex', normals.length / 3, mapMaxIndex[2]);
                 }
               }
-              {
-                // Construct return object.
-                // Rebuild UV and Normal vectors for use in OpenGL.
-                let has = {};
+              // Construct return object.
+              // Rebuild UV and Normal vectors for use in OpenGL.
 
-                has.uvs = mapIndices[1].length > 0;
-                has.normals = mapIndices[2].length > 0;
-                has.tangents = has.uvs && has.normals;
+              has.uvs = mapIndices[1].length > 0;
+              has.normals = mapIndices[2].length > 0;
 
-                ret = {
-                  array: {
-                    vertices: new Float32Array(vertices),
-                    uvs: opt.loadList.uvs ? new Float32Array(has.uvs ? vertices.length / 3 * 2 : 0) : null,
-                    normals: opt.loadList.normals ? new Float32Array(has.normals ? vertices.length : 0) : null,
-                    tangents: opt.loadList.tangents ? new Float32Array(has.tangents ? vertices.length : 0) : null,
-                    bitangents: opt.loadList.tangents ? new Float32Array(has.tangents ? vertices.length : 0) : null
-                  },
-                  indices: new Uint16Array(mapIndices[0])
-                };
-              }
+              ret = {
+                array: {
+                  vertices: new Float32Array(vertices),
+                  uvs: opt.loadList.uvs ? new Float32Array(has.uvs ? vertices.length / 3 * 2 : 0) : null,
+                  normals: opt.loadList.normals ? new Float32Array(vertices.length) : null,
+                  tangents: opt.loadList.tangents ? new Float32Array(has.uvs ? vertices.length : 0) : null,
+                  bitangents: opt.loadList.tangents ? new Float32Array(has.uvs ? vertices.length : 0) : null
+                },
+                indices: new Uint16Array(mapIndices[0]),
+                normalsFromData: has.normals
+              };
+
               if (ret.array.uvs) {
                 // Copy UV.
                 for (i = 0; i < mapIndices[0].length; i += 1) {
@@ -1440,13 +1598,63 @@ var Tut = (() => {
                 }
               }
               if (ret.array.normals) {
-                // Copy Normal.
-                for (i = 0; i < mapIndices[0].length; i += 1) {
-                  to = mapIndices[0][i] * 3;
-                  from = mapIndices[2][i] * 3;
-                  ret.array.normals[to] = normals[from];
-                  ret.array.normals[to + 1] = normals[from + 1];
-                  ret.array.normals[to + 2] = normals[from + 2];
+                if (has.normals) {
+                  // Copy Normal.
+                  for (i = 0; i < mapIndices[0].length; i += 1) {
+                    to = mapIndices[0][i] * 3;
+                    from = mapIndices[2][i] * 3;
+                    ret.array.normals[to] = normals[from];
+                    ret.array.normals[to + 1] = normals[from + 1];
+                    ret.array.normals[to + 2] = normals[from + 2];
+                  }
+                }
+                else {
+                  // Calculate normal from vertices.
+                  let v = {
+                    a: vec3.create(),
+                    b: vec3.create(),
+                    c: vec3.create()
+                  };
+                  let n = {
+                    a: vec3.create(),
+                    b: vec3.create(),
+                    c: vec3.create()
+                  };
+                  let d = {
+                    a: vec3.create(),
+                    b: vec3.create()
+                  };
+
+                  for (i = 0; i < mapIndices[0].length; i += 3) {
+                    to = mapIndices[0][i] * 3;
+                    [v.a[0], v.a[1], v.a[2]] = [vertices[to], vertices[to + 1], vertices[to + 2]];
+                    to = mapIndices[0][i + 1] * 3;
+                    [v.b[0], v.b[1], v.b[2]] = [vertices[to], vertices[to + 1], vertices[to + 2]];
+                    to = mapIndices[0][i + 2] * 3;
+                    [v.c[0], v.c[1], v.c[2]] = [vertices[to], vertices[to + 1], vertices[to + 2]];
+
+                    vec3.sub(d.a, v.b, v.a);
+                    vec3.sub(d.b, v.c, v.a);
+                    vec3.cross(n.a, d.a, d.b);
+                    vec3.add(n.a, n.a, v.a);
+
+                    vec3.sub(d.a, v.a, v.b);
+                    vec3.sub(d.b, v.c, v.a);
+                    vec3.cross(n.b, d.a, d.b);
+                    vec3.add(n.b, n.b, v.b);
+
+                    vec3.sub(d.a, v.b, v.c);
+                    vec3.sub(d.b, v.a, v.c);
+                    vec3.cross(n.c, d.a, d.b);
+                    vec3.add(n.c, n.c, v.c);
+
+                    to = mapIndices[0][i] * 3;
+                    [ret.array.normals[to], ret.array.normals[to + 1], ret.array.normals[to + 2]] = [n.a[0], n.a[1], n.a[2]];
+                    to = mapIndices[0][i + 1] * 3;
+                    [ret.array.normals[to], ret.array.normals[to + 1], ret.array.normals[to + 2]] = [n.b[0], n.b[1], n.b[2]];
+                    to = mapIndices[0][i + 2] * 3;
+                    [ret.array.normals[to], ret.array.normals[to + 1], ret.array.normals[to + 2]] = [n.c[0], n.c[1], n.c[2]];
+                  }
                 }
               }
               if (ret.array.tangents) {
@@ -1495,16 +1703,14 @@ var Tut = (() => {
                   [d.uv.a[0], d.uv.a[1]] = [uvs[idx.a] - uvs[idx.b], uvs[idx.a + 1] - uvs[idx.b + 1]];
                   [d.uv.b[0], d.uv.b[1]] = [uvs[idx.c] - uvs[idx.b], uvs[idx.c + 1] - uvs[idx.b + 1]];
                   // Fetch normals.
-                  idx.a = mapIndices[2][i + 1] * 3;
-                  idx.b = mapIndices[2][i] * 3;
-                  idx.c = mapIndices[2][i + 2] * 3;
-                  [n.a[0], n.a[1], n.a[2]] = [normals[idx.a], normals[idx.a + 1], normals[idx.a + 2]];
-                  [n.b[0], n.b[1], n.b[2]] = [normals[idx.b], normals[idx.b + 1], normals[idx.b + 2]];
-                  [n.c[0], n.c[1], n.c[2]] = [normals[idx.c], normals[idx.c + 1], normals[idx.c + 2]];
-                  // Calc this for the last to reuse 'idx'.
+                  // Use 'ret.array.normal'
                   idx.a = mapIndices[0][i + 1] * 3;
                   idx.b = mapIndices[0][i] * 3;
                   idx.c = mapIndices[0][i + 2] * 3;
+                  [n.a[0], n.a[1], n.a[2]] = [ret.array.normals[idx.a], ret.array.normals[idx.a + 1], ret.array.normals[idx.a + 2]];
+                  [n.b[0], n.b[1], n.b[2]] = [ret.array.normals[idx.b], ret.array.normals[idx.b + 1], ret.array.normals[idx.b + 2]];
+                  [n.c[0], n.c[1], n.c[2]] = [ret.array.normals[idx.c], ret.array.normals[idx.c + 1], ret.array.normals[idx.c + 2]];
+                  // Vertex delta.
                   [d.vert.a[0], d.vert.a[1], d.vert.a[2]] = [vertices[idx.a] - vertices[idx.b], vertices[idx.a + 1] - vertices[idx.b + 1], vertices[idx.a + 2] - vertices[idx.b + 2]];
                   [d.vert.b[0], d.vert.b[1], d.vert.b[2]] = [vertices[idx.c] - vertices[idx.b], vertices[idx.c + 1] - vertices[idx.b + 1], vertices[idx.c + 2] - vertices[idx.b + 2]];
 
