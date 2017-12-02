@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <script type="application/javascript" src="mod/gl-matrix.js"></script>
+  <script type="application/javascript" src="mod/tutils.js"></script>
+
+  <script type="application/javascript">
+    (function () {
+      "use strict";
+
+      window.addEventListener('load', function () {
+        var watch = new Tut.PerfStopwatch();
+        var surface = document.getElementById("surface");
+        var gl = surface.getContext("webgl");
+        var capReport = document.getElementById('capReport');
+
+        Tut.printGLCap(gl, function (str) {
+          capReport.appendChild(Tut.mkElement('pre')
+            .text(str)
+            .build());
+        });
+      });
+    })();
+  </script>
+</head>
+<body>
+  <p>
+    <canvas id="surface" width="800" height="600" hidden></canvas>
+  </p>
+  <p>
+    <div id="capReport"></div>
+  </p>
+</body>
+</html>

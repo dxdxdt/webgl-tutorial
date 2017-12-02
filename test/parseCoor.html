@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+
+  <link rel="stylesheet" href="../mod/jasmine/jasmine.css" />
+
+  <script type="application/javascript" src="../mod/jasmine/jasmine.js"></script>
+  <script type="application/javascript" src="../mod/jasmine/jasmine-html.js"></script>
+  <script type="application/javascript" src="../mod/jasmine/boot.js"></script>
+
+  <script type="application/javascript" src="../mod/gl-matrix.js"></script>
+  <script type="application/javascript" src="../mod/tutils.js"></script>
+
+  <script type="application/javascript">
+  (function () {
+    "use strict";
+    var doValue = function (r, v, e) {
+      let passed = Tut.parseCoor(v, e);
+
+      if (Array.isArray(passed)) {
+        let i;
+
+        expect(passed.length).toBe(r.length);
+        if (passed.length === r.length) {
+          for (i = 0; i < passed.length; i += 1) {
+            expect(passed[i]).toBe(r[i]);
+          }
+        }
+      }
+      else {
+        expect(passed).toBe(r);
+      }
+    };
+
+    describe("Tut.parseCoor()", function () {
+      it("without expect", function () {
+        doValue([123.01], '123.01');
+        doValue([-123.01], '-123.01');
+        doValue([-123.01], '           -123.01       ');
+        doValue([111.11, 222,22], '111.11, 222,22');
+        doValue([111.11, 222,22, 333.333], '111.11, 222,22, 333.333');
+
+        doValue(null, '111.11, 222,22, 333.333,');
+        doValue(null, '-123.01,');
+      });
+    });
+    describe("Tut.parseCoor()", function () {
+      it("with expect", function () {
+        doValue([123.01], '123.01', 1);
+        doValue(null, '-123.01', 2);
+        doValue([-123.01], '           -123.01       ', 1);
+        doValue([111.11, 222.22], '111.11, 222.22', 2);
+        doValue(null, '111.11, 222,22', 1);
+        doValue([111.11, 222.22, 333.333], '111.11, 222.22, 333.333', 3);
+        doValue(null, '111.11, 222,22, 333.333', 5);
+      });
+    });
+  })();
+  </script>
+
+</head>
+<body>
+</body>
+</html>
