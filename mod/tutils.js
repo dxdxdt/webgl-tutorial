@@ -1416,6 +1416,11 @@ var Tut = (() => {
 
       return ret;
     },
+    clearShader: function (gl, s) {
+      gl.deleteProgram(s.prog);
+      gl.deleteShader(s.vert);
+      gl.deleteShader(s.frag);
+    },
     uploadModel: (function () {
       return function (gl, m, opt) {
         let ret = {

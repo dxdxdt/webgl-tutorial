@@ -38,7 +38,7 @@ void main () {
   tDiff = max(dot(normal_us, lightDir), 0.0);
   cDiff = tDiff * att * u_light.color * uvColor;
 
-  viewDir = normalize(u_viewPos - u_light.pos_ws);
+  viewDir = normalize(u_viewPos - pos_ws);
   reflectDir = reflect(-lightDir, normal_us);
   tSpec = pow(max(dot(viewDir, reflectDir), 0.0), u_light.shininess);
   cSpec = tSpec * att * specColor * u_light.color;

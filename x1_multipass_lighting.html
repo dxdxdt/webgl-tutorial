@@ -576,7 +576,6 @@
               attrMap: { a_pos: 0 },
               unif: [
                 'u_tex.bloom',
-                'u_propVPass',
                 'u_propBlurStep.w',
                 'u_propBlurStep.h' ]
             }),
@@ -623,7 +622,6 @@
 
         gl.useProgram(gr.prog.pass.bloom.prog);
         gl.uniform1i(gr.prog.pass.bloom.unif['u_tex.bloom'], 0);
-        if (true)
         {
           let i;
           const arr = [0.227027, 0.2108108, 0.1945946, 0.1581081, 0.1216216, 0.0878378, 0.054054, 0.035135, 0.016216];
@@ -1015,9 +1013,8 @@
             gl.bindFramebuffer(gl.FRAMEBUFFER, gr.fb.bloom.a);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
-            gl.uniform1i(gr.prog.pass.bloom.unif['u_propVPass'], 0);
             gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.w'], 1 / renderDim.w);
-            gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.h'], 1 / renderDim.h);
+            gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.h'], 0);
 
             gl.bindTexture(gl.TEXTURE_2D, gr.rt.bloom.b);
             gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
@@ -1026,8 +1023,7 @@
             gl.bindFramebuffer(gl.FRAMEBUFFER, gr.fb.bloom.b);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
-            gl.uniform1i(gr.prog.pass.bloom.unif['u_propVPass'], 1);
-            gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.w'], 1 / renderDim.w);
+            gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.w'], 0);
             gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.h'], 1 / renderDim.h);
 
             gl.bindTexture(gl.TEXTURE_2D, gr.rt.bloom.a);
