@@ -307,9 +307,9 @@
         // Shader: G buffering pass
         new Tut.R.Source('shader.pass.g_buf.vert', "assets/x1/pass.g_buf.vert", Tut.R.TYPE.TEXT),
         new Tut.R.Source('shader.pass.g_buf.frag', "assets/x1/pass.g_buf.frag", Tut.R.TYPE.TEXT),
-        // Shader: Silhouette
-        new Tut.R.Source('shader.sil.vert', "assets/x1/sil.vert", Tut.R.TYPE.TEXT),
-        new Tut.R.Source('shader.sil.frag', "assets/x1/sil.frag", Tut.R.TYPE.TEXT),
+        // Shader: Luminous pass
+        new Tut.R.Source('shader.pass.lum.vert', "assets/x1/pass.lum.vert", Tut.R.TYPE.TEXT),
+        new Tut.R.Source('shader.pass.lum.frag', "assets/x1/pass.lum.frag", Tut.R.TYPE.TEXT),
         // Shader: Point light pass
         new Tut.R.Source('shader.pass.light_pt.vert', "assets/x1/pass.light_pt.vert", Tut.R.TYPE.TEXT),
         new Tut.R.Source('shader.pass.light_pt.frag', "assets/x1/pass.light_pt.frag", Tut.R.TYPE.TEXT),
@@ -522,7 +522,7 @@
         gr.prog = {
           pass: {
             g_buf: Tut.setupShader(gl, {
-              name: 'g_buf',
+              name: 'pass.g_buf',
               vert: rp.shader.pass.g_buf.vert,
               frag: rp.shader.pass.g_buf.frag,
               verbose: true,
@@ -539,7 +539,7 @@
                 'u_ambientFactor' ]
             }),
             light_pt: Tut.setupShader(gl, {
-              name: 'light_pt',
+              name: 'pass.light_pt',
               vert: rp.shader.pass.light_pt.vert,
               frag: rp.shader.pass.light_pt.frag,
               verbose: true,
@@ -557,8 +557,19 @@
                 'u_light.lq',
                 'u_viewPos' ]
             }),
+            lum: Tut.setupShader(gl, {
+              name: 'pass.lum',
+              vert: rp.shader.pass.lum.vert,
+              frag: rp.shader.pass.lum.frag,
+              verbose: true,
+              attrMap: {
+                a_pos_ms: 0,
+                a_uv: 1
+              },
+              unif: ['u_tf', 'u_tex', 'u_baseColor']
+            }),
             bloom: Tut.setupShader(gl, {
-              name: 'bloom',
+              name: 'pass.bloom',
               vert: rp.shader.pass.bloom.vert,
               frag: rp.shader.pass.bloom.frag,
               verbose: true,
@@ -570,7 +581,7 @@
                 'u_propBlurStep.h' ]
             }),
             g_fin: Tut.setupShader(gl, {
-              name: 'g_fin',
+              name: 'pass.g_fin',
               vert: rp.shader.pass.g_fin.vert,
               frag: rp.shader.pass.g_fin.frag,
               verbose: true,
@@ -578,7 +589,7 @@
               unif: [
                 'u_tex.lighted',
                 'u_tex.ambient',
-                'u_tex.luminous' ]
+                'u_tex.bloom' ]
             })
           },
           quad: Tut.setupShader(gl, {
@@ -589,17 +600,6 @@
             attrMap: {
               a_pos: 0 },
             unif: ['u_tex']
-          }),
-          sil: Tut.setupShader(gl, {
-            name: 'sil',
-            vert: rp.shader.sil.vert,
-            frag: rp.shader.sil.frag,
-            verbose: true,
-            attrMap: {
-              a_pos_ms: 0,
-              a_uv: 1
-            },
-            unif: ['u_tf', 'u_tex', 'u_baseColor']
           })
         };
 
@@ -609,13 +609,6 @@
         gl.uniform1i(gr.prog.pass.g_buf.unif['u_ts.specular'], 1);
         gl.uniform1f(gr.prog.pass.g_buf.unif['u_ambientFactor'], 0.05);
 
-        gl.useProgram(gr.prog.quad.prog);
-        gl.uniform1i(gr.prog.quad.unif['u_tex'], 0);
-
-        gl.useProgram(gr.prog.sil.prog);
-        gl.uniform1i(gr.prog.sil.unif['u_tex'], 0);
-        gl.uniform3f(gr.prog.sil.unif['u_baseColor'], 1, 1, 1);
-
         gl.useProgram(gr.prog.pass.light_pt.prog);
         gl.uniform1i(gr.prog.pass.light_pt.unif['u_tex.pos'], 0);
         gl.uniform1i(gr.prog.pass.light_pt.unif['u_tex.normal'], 1);
@@ -624,12 +617,10 @@
         gl.uniform3f(gr.prog.pass.light_pt.unif['u_light.color'], 1, 1, 1);
         gl.uniform1f(gr.prog.pass.light_pt.unif['u_light.shininess'], 32);
 
-        gr.prog.pass.bloom.b = {
-          sampleDim: {
-            w: renderDim.w / 2,
-            h: renderDim.h / 2
-          }
-        };
+        gl.useProgram(gr.prog.pass.lum.prog);
+        gl.uniform1i(gr.prog.pass.lum.unif['u_tex'], 0);
+        gl.uniform3f(gr.prog.pass.lum.unif['u_baseColor'], 1, 1, 1);
+
         gl.useProgram(gr.prog.pass.bloom.prog);
         gl.uniform1i(gr.prog.pass.bloom.unif['u_tex.bloom'], 0);
         if (true)
@@ -647,7 +638,10 @@
         gl.useProgram(gr.prog.pass.g_fin.prog);
         gl.uniform1i(gr.prog.pass.g_fin.unif['u_tex.lighted'], 0);
         gl.uniform1i(gr.prog.pass.g_fin.unif['u_tex.ambient'], 1);
-        gl.uniform1i(gr.prog.pass.g_fin.unif['u_tex.luminous'], 2);
+        gl.uniform1i(gr.prog.pass.g_fin.unif['u_tex.bloom'], 2);
+
+        gl.useProgram(gr.prog.quad.prog);
+        gl.uniform1i(gr.prog.quad.unif['u_tex'], 0);
 
         gl.useProgram(null);
 
@@ -732,7 +726,6 @@
           color: {
             uv: gl.createTexture(),
             specular: gl.createTexture(),
-            luminous: gl.createTexture(),
             ambient: gl.createTexture()
           },
           light: gl.createTexture(),
@@ -756,9 +749,6 @@
         gl.bindTexture(gl.TEXTURE_2D, gr.rt.color.specular);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, renderDim.w, renderDim.h, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
         setNPOT();
-        gl.bindTexture(gl.TEXTURE_2D, gr.rt.color.luminous);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, renderDim.w, renderDim.h, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
-        setNPOT();
         gl.bindTexture(gl.TEXTURE_2D, gr.rt.color.ambient);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, renderDim.w, renderDim.h, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
         setNPOT();
@@ -766,18 +756,18 @@
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, renderDim.w, renderDim.h, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
         setNPOT();
         gl.bindTexture(gl.TEXTURE_2D, gr.rt.bloom.a);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gr.prog.pass.bloom.b.sampleDim.w, gr.prog.pass.bloom.b.sampleDim.h, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, renderDim.w, renderDim.h, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
         setNPOT();
         gl.bindTexture(gl.TEXTURE_2D, gr.rt.bloom.b);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gr.prog.pass.bloom.b.sampleDim.w, gr.prog.pass.bloom.b.sampleDim.h, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, renderDim.w, renderDim.h, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
         setNPOT();
 
         // Prep Framebuffers.
         ext = gr.ext['WEBGL_draw_buffers'];
         gr.fb = {
           g_buf: gl.createFramebuffer(),
-          lum: gl.createFramebuffer(),
           light: gl.createFramebuffer(),
+          lum: gl.createFramebuffer(),
           bloom: {
             a: gl.createFramebuffer(),
             b: gl.createFramebuffer()
@@ -810,15 +800,18 @@
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, gr.fb.light);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, ext.COLOR_ATTACHMENT0_WEBGL, gl.TEXTURE_2D, gr.rt.light, 0);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, ext.COLOR_ATTACHMENT1_WEBGL, gl.TEXTURE_2D, gr.rt.color.luminous, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, ext.COLOR_ATTACHMENT1_WEBGL, gl.TEXTURE_2D, gr.rt.bloom.b, 0);
         ext.drawBuffersWEBGL([
           ext.COLOR_ATTACHMENT0_WEBGL,
           ext.COLOR_ATTACHMENT1_WEBGL ]);
         assertCompleteFB('light');
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, gr.fb.lum);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, ext.COLOR_ATTACHMENT0_WEBGL, gl.TEXTURE_2D, gr.rt.color.luminous, 0);
-        ext.drawBuffersWEBGL([ext.COLOR_ATTACHMENT0_WEBGL]);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, ext.COLOR_ATTACHMENT0_WEBGL, gl.TEXTURE_2D, gr.rt.light, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, ext.COLOR_ATTACHMENT1_WEBGL, gl.TEXTURE_2D, gr.rt.bloom.b, 0);
+        ext.drawBuffersWEBGL([
+          ext.COLOR_ATTACHMENT0_WEBGL,
+          ext.COLOR_ATTACHMENT1_WEBGL]);
         gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, gr.rb.main);
         assertCompleteFB('lum');
 
@@ -830,7 +823,7 @@
         gl.bindFramebuffer(gl.FRAMEBUFFER, gr.fb.bloom.b);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, ext.COLOR_ATTACHMENT0_WEBGL, gl.TEXTURE_2D, gr.rt.bloom.b, 0);
         ext.drawBuffersWEBGL([ext.COLOR_ATTACHMENT0_WEBGL]);
-        assertCompleteFB('bloom.a');
+        assertCompleteFB('bloom.b');
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, gr.fb.final);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, ext.COLOR_ATTACHMENT0_WEBGL, gl.TEXTURE_2D, gr.rt.final, 0);
@@ -925,10 +918,12 @@
           }
           gl.disableVertexAttribArray(1);
           gl.disableVertexAttribArray(2);
-
-
           gl.disable(gl.DEPTH_TEST);
           gl.disable(gl.CULL_FACE);
+
+          gl.bindFramebuffer(gl.FRAMEBUFFER, gr.fb.lum);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+
           gl.enable(gl.BLEND);
           gl.blendFunc(gl.ONE, gl.ONE);
           gl.blendEquation(gl.FUNC_ADD);
@@ -937,7 +932,6 @@
             let lc;
 
             gl.bindFramebuffer(gl.FRAMEBUFFER, gr.fb.light);
-            gl.clear(gl.COLOR_BUFFER_BIT);
 
             gl.useProgram(gr.prog.pass.light_pt.prog);
             gl.uniform3fv(gr.prog.pass.light_pt.unif['u_viewPos'], scene.cam.position);
@@ -966,15 +960,16 @@
               }
             }
           }
+          gl.disable(gl.BLEND);
 
           gl.enable(gl.DEPTH_TEST);
+          gl.enable(gl.CULL_FACE);
           gl.enableVertexAttribArray(1);
-          gl.blendFunc(gl.ONE, gl.ZERO);
           {
             // Luminous pass
             gl.bindFramebuffer(gl.FRAMEBUFFER, gr.fb.lum);
 
-            gl.useProgram(gr.prog.sil.prog);
+            gl.useProgram(gr.prog.pass.lum.prog);
             for (pair of scene.obj.map.luminous) {
               glMdl = gr.model[pair[0]];
               mdl = model[pair[0]];
@@ -997,16 +992,15 @@
                 matModel = obj.updateMatrix().matrix;
                 mat4.amul(matTF, scene.cam.projection, scene.cam.view, matModel);
 
-                gl.uniformMatrix4fv(gr.prog.sil.unif['u_tf'], gl.FALSE, matTF);
+                gl.uniformMatrix4fv(gr.prog.pass.lum.unif['u_tf'], gl.FALSE, matTF);
                 gl.drawElements(gl.TRIANGLES, mdl.indices.length, gl.UNSIGNED_SHORT, 0);
               }
             }
           }
-          gl.disableVertexAttribArray(1);
           gl.disable(gl.DEPTH_TEST);
-          gl.disable(gl.BLEND);
+          gl.disable(gl.CULL_FACE);
+          gl.disableVertexAttribArray(1);
 
-          gl.viewport(0, 0, gr.prog.pass.bloom.b.sampleDim.w, gr.prog.pass.bloom.b.sampleDim.h);
           {
             // Bloom pass
             gl.useProgram(gr.prog.pass.bloom.prog);
@@ -1025,7 +1019,7 @@
             gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.w'], 1 / renderDim.w);
             gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.h'], 1 / renderDim.h);
 
-            gl.bindTexture(gl.TEXTURE_2D, gr.rt.color.luminous);
+            gl.bindTexture(gl.TEXTURE_2D, gr.rt.bloom.b);
             gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
 
             // Vertical blur
@@ -1033,13 +1027,12 @@
             gl.clear(gl.COLOR_BUFFER_BIT);
 
             gl.uniform1i(gr.prog.pass.bloom.unif['u_propVPass'], 1);
-            gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.w'], 1 / gr.prog.pass.bloom.b.sampleDim.w);
-            gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.h'], 1 / gr.prog.pass.bloom.b.sampleDim.h);
+            gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.w'], 1 / renderDim.w);
+            gl.uniform1f(gr.prog.pass.bloom.unif['u_propBlurStep.h'], 1 / renderDim.h);
 
             gl.bindTexture(gl.TEXTURE_2D, gr.rt.bloom.a);
             gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
           }
-          gl.viewport(0, 0, renderDim.w, renderDim.h);
 
           // Final pass
           gl.bindFramebuffer(gl.FRAMEBUFFER, gr.fb.final);

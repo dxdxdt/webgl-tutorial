@@ -43,6 +43,6 @@ void main () {
   tSpec = pow(max(dot(viewDir, reflectDir), 0.0), u_light.shininess);
   cSpec = tSpec * att * specColor * u_light.color;
 
-  gl_FragData[0] = vec4(cDiff + cSpec, 1.0);
+  gl_FragData[0] = vec4(cDiff, 1.0);
   gl_FragData[1] = vec4(cSpec, 1.0);
 }
