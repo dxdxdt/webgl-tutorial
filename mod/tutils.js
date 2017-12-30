@@ -2048,6 +2048,19 @@ var Tut = (() => {
       }
 
       return p.join(', ');
+    },
+
+    parseURIQuery: function (str) {
+      let arr = str.split('&');
+      let e, p;
+      let ret = {};
+
+      for (e of arr) {
+        p = e.split('=');
+        ret[decodeURIComponent(p[0])] = decodeURIComponent(p[1]);
+      }
+
+      return ret;
     }
   };
 

@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <title>X1: Multipass Lighting</title>
   <script type="application/javascript" src="mod/gl-matrix.js"></script>
   <script type="application/javascript" src="mod/tutils.js"></script>
 
@@ -36,6 +37,7 @@
     var mapObjTr = new Map();
     var mapTrObj = new Map();
     var jsonWindow = null;
+    var uriQuery = Tut.parseURIQuery(location.search.substr(1));
 
     scene.toObject = function () {
       let ret = {
@@ -367,7 +369,7 @@
           scene.reset();
         }
       }, false);
-      document.getElementById('btnSceneJSON').addEventListener('click', function () {
+      document.getElementById('btnSceneData').addEventListener('click', function () {
         let pre;
         let str = JSON.stringify(scene.toObject(), null, 2);
 
@@ -376,12 +378,36 @@
           Tut.setTextNode(pre, str, jsonWindow.document);
         }
         else {
-          jsonWindow = window.open("about:blank", "Scene JSON");
+          jsonWindow = window.open("about:blank", "SceneData");
           pre = Tut.mkElement('pre', jsonWindow.document)
             .text(str)
             .attr('id', 'json')
             .build();
           jsonWindow.document.body.appendChild(pre);
+          jsonWindow.document.title = "X1: Multipass Lighting - Scene Data";
+        }
+        jsonWindow.focus();
+      }, false);
+      document.getElementById('btnSceneDataParam').addEventListener('click', function () {
+        let pre;
+        let str = btoa(JSON.stringify(scene.toObject()));
+
+        if (str.length > 2000 && (!confirm("The result string exceeds 2000 characters, which is bad to paste in a url. Continue?"))) {
+          return;
+        }
+
+        if (jsonWindow && (!jsonWindow.closed)) {
+          pre = jsonWindow.document.getElementById('json');
+          Tut.setTextNode(pre, str, jsonWindow.document);
+        }
+        else {
+          jsonWindow = window.open("about:blank", "SceneDataParam");
+          pre = Tut.mkElement('pre', jsonWindow.document)
+            .text(str)
+            .attr('id', 'json')
+            .build();
+          jsonWindow.document.body.appendChild(pre);
+          jsonWindow.document.title = "(" + str.length + ") X1: Multipass Lighting - Scene Data as Param";
         }
         jsonWindow.focus();
       }, false);
@@ -835,8 +861,29 @@
         watch.push(true);
 
         try {
-          // Load scene data if present.
-          let str = localStorage.getItem('scene');
+          let str;
+          let loadDefault = () => str = localStorage.getItem('scene'); // Load scene data if present.
+
+          // Use param scene data if provided.
+          if (typeof uriQuery['sceneData'] !== 'undefined') {
+            try {
+              let tmp = atob(uriQuery['sceneData']);
+
+              if (confirm("Scene Data Param detected. Stored data will be lost. Continue?")) {
+                str = tmp;
+              }
+              else {
+                loadDefault();
+              }
+            }
+            catch (e) {
+              alert("Failed to parse Scene Data Param.");
+              loadDefault();
+            }
+          }
+          else {
+            loadDefault();
+          }
 
           if (str) {
             scene.fromObject(JSON.parse(str));
@@ -1205,7 +1252,8 @@
       <h2>General</h2>
       <p>
         <button type='reset' id='btnReset'>Reset Scene</button>
-        <button type='reset' id='btnSceneJSON'>Show Scene JSON</button>
+        <button type='reset' id='btnSceneData'>Show Scene Data</button>
+        <button type='reset' id='btnSceneDataParam'>Show Scene Data as Param</button>
       </p>
     </div>
   </p>
